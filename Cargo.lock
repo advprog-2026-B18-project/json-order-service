@@ -1279,6 +1279,7 @@ dependencies = [
  "axum-extra",
  "chrono",
  "dotenv",
+ "dotenvy",
  "jsonwebtoken",
  "lettre",
  "regex",
