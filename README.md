@@ -56,7 +56,7 @@ Modul ini bertindak sebagai orkestrator transaksi — menangani seluruh siklus h
 
 ---
 
-### Table: `orders`
+### Table: `Order`
 
 | Field               | Type                  | Nullable | Key |
 |---------------------|-----------------------|----------|-----|
@@ -99,20 +99,22 @@ Modul ini bertindak sebagai orkestrator transaksi — menangani seluruh siklus h
 
 ---
 
-### Object: `product_snapshot`
+### Object: `ProductSnapshot`
 
 Salinan immutable data produk yang disimpan di dalam setiap order saat checkout.
 
-| Field          | Type            | Nullable |
-|----------------|-----------------|----------|
-| product_id     | UUID (string)   | NOT NULL |
-| name           | VARCHAR         | NOT NULL |
-| description    | TEXT            | NOT NULL |
-| image_url      | VARCHAR         | NOT NULL |
-| origin_country | VARCHAR         | NOT NULL |
-| purchase_date  | DATE            | NOT NULL |
-| unit_price     | INTEGER         | NOT NULL |
-| service_fee    | INTEGER         | NOT NULL |
+| Field          | Type            | Nullable | Key |
+|----------------|-----------------|----------|-----|
+| product_id     | UUID (string)   | NOT NULL | PK  |
+| name           | VARCHAR         | NOT NULL |     |
+| description    | TEXT            | NOT NULL |     |
+| image_url      | VARCHAR         | NOT NULL |     |
+| origin_country | VARCHAR         | NOT NULL |     |
+| purchase_date  | DATE            | NOT NULL |     |
+| unit_price     | INTEGER         | NOT NULL |     |
+| service_fee    | INTEGER         | NOT NULL |     |
+
+**PK:** product_id — id dari produk aslinya.
 
 **Notes:**
 - Object ini disimpan sebagai JSON di kolom product_snapshot pada tabel orders, bukan tabel terpisah.
@@ -120,19 +122,21 @@ Salinan immutable data produk yang disimpan di dalam setiap order saat checkout.
 
 ---
 
-### Object: `shipping_address`
+### Object: `ShippingAddress`
 
-| Field          | Type    | Nullable |
-|----------------|---------|----------|
-| recipient_name | VARCHAR | NOT NULL |
-| phone_number   | VARCHAR | NOT NULL |
-| street         | VARCHAR | NOT NULL |
-| kelurahan      | VARCHAR | NOT NULL |
-| kecamatan      | VARCHAR | NOT NULL |
-| city           | VARCHAR | NOT NULL |
-| province       | VARCHAR | NOT NULL |
-| postal_code    | VARCHAR | NOT NULL |
-| notes          | VARCHAR | NULL     |
+| Field          | Type    | Nullable | Key |
+|----------------|---------|----------|-----|
+| recipient_name | VARCHAR | NOT NULL | PK  |
+| phone_number   | VARCHAR | NOT NULL | PK  |
+| street         | VARCHAR | NOT NULL |     |
+| kelurahan      | VARCHAR | NOT NULL |     |
+| kecamatan      | VARCHAR | NOT NULL |     |
+| city           | VARCHAR | NOT NULL |     |
+| province       | VARCHAR | NOT NULL |     |
+| postal_code    | VARCHAR | NOT NULL |     |
+| notes          | VARCHAR | NULL     |     |
+
+**PK:** (recipient_name, phone_number)
 
 **Notes:**
 - Object ini disimpan sebagai JSON di kolom shipping_address pada tabel orders, bukan tabel terpisah.
@@ -140,17 +144,23 @@ Salinan immutable data produk yang disimpan di dalam setiap order saat checkout.
 
 ---
 
-### Object: `status_history`
+### Object: `StatusHistory`
 
 Array yang menyimpan seluruh log perubahan status pesanan secara kronologis.
 
-| Field      | Type                | Nullable |
-|------------|---------------------|----------|
-| status     | order_status        | NOT NULL |
-| changed_by | UUID (string)       | NOT NULL |
-| actor_role | VARCHAR             | NOT NULL |
-| notes      | VARCHAR             | NULL     |
-| timestamp  | DATETIME (ISO 8601) | NOT NULL |
+| Field        | Type                | Nullable | Key |
+|--------------|---------------------|----------|-----|
+| statushis_id | UUID                | NOT NULL | PK  |
+| order_id     | UUID                | NOT NULL | FK  |
+| status       | order_status        | NOT NULL |     |
+| changed_by   | UUID                | NOT NULL |     |
+| actor_role   | VARCHAR             | NOT NULL |     |
+| notes        | VARCHAR             | NULL     |     |
+| timestamp    | DATETIME (ISO 8601) | NOT NULL |     |
+
+**PK:** statushis_id
+
+**FK:** order_id
 
 **Notes:**
 - Object ini disimpan sebagai JSON ARRAY di kolom status_history pada tabel orders, bukan tabel terpisah.
@@ -159,7 +169,7 @@ Array yang menyimpan seluruh log perubahan status pesanan secara kronologis.
 
 ---
 
-### Table: `ratings`
+### Table: `Rating`
 
 | Field          | Type                | Nullable | Key |
 |----------------|---------------------|----------|-----|
