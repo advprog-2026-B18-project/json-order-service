@@ -22,11 +22,13 @@ Modul ini bertindak sebagai orkestrator transaksi — menangani seluruh siklus h
 
 ---
 
+
 ## Tech Stack
 
 - **Rust** + **Axum** — web framework
 - **SQLx** — database driver + auto migration
 - **PostgreSQL** (Neon DB) — penyimpanan data
+
 
 ---
 
@@ -34,9 +36,9 @@ Modul ini bertindak sebagai orkestrator transaksi — menangani seluruh siklus h
 
 ## Database Schema
 
-## Custom Types
+### Custom Types
 
-### `order_status`
+#### `order_status`
 | Value       |
 |-------------|
 | PENDING     |
@@ -54,7 +56,7 @@ Modul ini bertindak sebagai orkestrator transaksi — menangani seluruh siklus h
 
 ---
 
-## Table: `orders`
+### Table: `orders`
 
 | Field               | Type                  | Nullable | Key |
 |---------------------|-----------------------|----------|-----|
@@ -97,7 +99,7 @@ Modul ini bertindak sebagai orkestrator transaksi — menangani seluruh siklus h
 
 ---
 
-## Object: `product_snapshot`
+### Object: `product_snapshot`
 
 Salinan immutable data produk yang disimpan di dalam setiap order saat checkout.
 
@@ -118,7 +120,7 @@ Salinan immutable data produk yang disimpan di dalam setiap order saat checkout.
 
 ---
 
-## Object: `shipping_address`
+### Object: `shipping_address`
 
 | Field          | Type    | Nullable |
 |----------------|---------|----------|
@@ -138,7 +140,7 @@ Salinan immutable data produk yang disimpan di dalam setiap order saat checkout.
 
 ---
 
-## Object: `status_history`
+### Object: `status_history`
 
 Array yang menyimpan seluruh log perubahan status pesanan secara kronologis.
 
@@ -157,7 +159,7 @@ Array yang menyimpan seluruh log perubahan status pesanan secara kronologis.
 
 ---
 
-## Table: `ratings`
+### Table: `ratings`
 
 | Field          | Type                | Nullable | Key |
 |----------------|---------------------|----------|-----|
