@@ -54,7 +54,7 @@ mod tests {
 
     #[test]
     fn test_order_status_all_variants() {
-        let variants = vec![
+        let variants = [
             OrderStatus::Pending,
             OrderStatus::Paid,
             OrderStatus::Purchased,
