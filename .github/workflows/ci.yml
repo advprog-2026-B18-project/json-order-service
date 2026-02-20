@@ -8,7 +8,6 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  DATABASE_URL: ${{ secrets.DATABASE_URL }}
 
 jobs:
   # ─────────────────────────────────────────────
@@ -39,6 +38,8 @@ jobs:
         run: cargo fmt --all -- --check
 
       - name: Run Clippy
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: cargo clippy --all-targets --all-features -- -D warnings
 
   # ─────────────────────────────────────────────
@@ -64,9 +65,6 @@ jobs:
           --health-timeout 5s
           --health-retries 5
 
-    env:
-      DATABASE_URL: postgres://postgres:postgres@localhost:5432/order_service_test
-
     steps:
       - uses: actions/checkout@v4
 
@@ -83,17 +81,19 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-
 
-      - name: Install cargo-tarpaulin (coverage)
+      - name: Install cargo-tarpaulin
         run: cargo install cargo-tarpaulin
 
       - name: Run tests with coverage
+        env:
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/order_service_test
         run: |
           cargo tarpaulin \
             --out Xml \
             --output-dir coverage \
             --exclude-files "src/main.rs" \
-            --test-threads 1 \
-            --timeout 120
+            --timeout 120 \
+            -- --test-threads=1
 
       - name: Upload coverage report
         uses: actions/upload-artifact@v4
@@ -112,7 +112,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # full history for blame info
+          fetch-depth: 0
 
       - name: Download coverage report
         uses: actions/download-artifact@v4
