@@ -1,4 +1,5 @@
 mod db;
+mod models;
 #[cfg(test)]
 mod tests;
 
