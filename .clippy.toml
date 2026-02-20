@@ -1,0 +1,16 @@
+# ─────────────────────────────────────────────
+# Clippy configuration  (.clippy.toml)
+# Docs: https://doc.rust-lang.org/clippy/configuration.html
+# ─────────────────────────────────────────────
+
+# Max complexity allowed per function
+cognitive-complexity-threshold = 15
+
+# Max lines per function
+too-many-lines-threshold = 60
+
+# Max arguments a function may take
+too-many-arguments-threshold = 7
+
+# Warn on large future sizes
+future-size-threshold = 16384
