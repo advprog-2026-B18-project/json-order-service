@@ -40,7 +40,16 @@ jobs:
       - name: Run Clippy
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: cargo clippy --all-targets --all-features -- -D warnings
+        run: |
+          cargo clippy --all-targets --all-features --message-format=json 2>/dev/null \
+            | tee clippy-report.json || true
+          cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: Upload clippy report
+        uses: actions/upload-artifact@v4
+        with:
+          name: clippy-report
+          path: clippy-report.json
 
   # ─────────────────────────────────────────────
   # 2. TEST — Unit & Integration tests
@@ -118,6 +127,12 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - name: Download clippy report
+        uses: actions/download-artifact@v4
+        with:
+          name: clippy-report
+          path: .
 
       - name: Download coverage report
         uses: actions/download-artifact@v4
