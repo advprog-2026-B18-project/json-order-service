@@ -8,7 +8,7 @@ mod tests {
 
     use crate::models::order::{CreateOrderRequest, Order, OrderStatus, OrderStatusHistory};
 
-    // ─── Helpers ────────────────────────────────────────────────────────────
+    // ─── Helpers ─────────────────────────────────────────────────────────────
 
     fn make_order(status: OrderStatus) -> Order {
         Order {
@@ -37,7 +37,7 @@ mod tests {
         }
     }
 
-    // ─── OrderStatus Tests ───────────────────────────────────────────────────
+    // ─── OrderStatus Tests ────────────────────────────────────────────────────
 
     #[test]
     fn test_order_status_eq() {
@@ -65,7 +65,7 @@ mod tests {
         assert_eq!(variants.len(), 6);
     }
 
-    // ─── Order struct Tests ──────────────────────────────────────────────────
+    // ─── Order struct Tests ───────────────────────────────────────────────────
 
     #[test]
     fn test_order_default_status_is_pending() {
@@ -116,7 +116,7 @@ mod tests {
         assert_eq!(order.discount_amount, 50_000);
     }
 
-    // ─── CreateOrderRequest Tests ────────────────────────────────────────────
+    // ─── CreateOrderRequest Tests ─────────────────────────────────────────────
 
     #[test]
     fn test_create_order_request_quantity_positive() {
@@ -136,7 +136,7 @@ mod tests {
         assert!(req.voucher_code.is_none());
     }
 
-    // ─── OrderStatusHistory Tests ────────────────────────────────────────────
+    // ─── OrderStatusHistory Tests ─────────────────────────────────────────────
 
     #[test]
     fn test_status_history_new_status_not_same_as_old() {
@@ -166,9 +166,8 @@ mod tests {
         assert!(history.old_status.is_none());
     }
 
-    // ─── State machine / transition rules ────────────────────────────────────
+    // ─── State machine Tests ──────────────────────────────────────────────────
 
-    /// Aturan bisnis: order yang sudah COMPLETED tidak bisa dibatalkan
     #[test]
     fn test_completed_order_cannot_be_cancelled() {
         let order = make_order(OrderStatus::Completed);
@@ -176,21 +175,18 @@ mod tests {
         assert!(!can_cancel, "order COMPLETED tidak boleh dibatalkan");
     }
 
-    /// Aturan bisnis: PENDING → PAID adalah transisi valid
     #[test]
     fn test_pending_to_paid_is_valid() {
         let order = make_order(OrderStatus::Pending);
         assert!(can_transition(&order.status, &OrderStatus::Paid));
     }
 
-    /// Aturan bisnis: tidak boleh loncat dari PENDING ke SHIPPED
     #[test]
     fn test_pending_cannot_skip_to_shipped() {
         let order = make_order(OrderStatus::Pending);
         assert!(!can_transition(&order.status, &OrderStatus::Shipped));
     }
 
-    /// Helper: definisi state machine transisi yang valid
     fn can_transition(from: &OrderStatus, to: &OrderStatus) -> bool {
         matches!(
             (from, to),
