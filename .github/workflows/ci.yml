@@ -96,7 +96,9 @@ jobs:
             -- --test-threads=1
 
       - name: Fix coverage XML paths for SonarCloud
-        run: sed -i 's|/github/workspace/||g' coverage/cobertura.xml
+        run: |
+          sed -i 's|/github/workspace/||g' coverage/cobertura.xml
+          sed -i 's|filename="|filename="src/|g' coverage/cobertura.xml
 
       - name: Upload coverage report
         uses: actions/upload-artifact@v4
