@@ -1,7 +1,7 @@
 DROP TYPE IF EXISTS order_status CASCADE;
 
 CREATE TYPE order_status AS ENUM (
-    'Pending', 'Paid', 'Purchased', 'Shipped', 'Completed', 'Cancelled'
+    'PENDING', 'PAID', 'PURCHASED', 'SHIPPED', 'COMPLETED', 'CANCELLED'
 );
 
 CREATE TABLE IF NOT EXISTS orders (
@@ -12,7 +12,7 @@ CREATE TABLE IF NOT EXISTS orders (
     quantity INT NOT NULL CHECK (quantity > 0),
     shipping_address TEXT NOT NULL,
     total_price BIGINT NOT NULL,
-    status order_status NOT NULL DEFAULT 'Pending',
+    status order_status NOT NULL DEFAULT 'PENDING',
     voucher_code VARCHAR(50),
     discount_amount BIGINT NOT NULL DEFAULT 0,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
