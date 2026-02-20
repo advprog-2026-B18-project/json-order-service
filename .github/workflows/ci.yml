@@ -92,6 +92,7 @@ jobs:
             --out Xml \
             --output-dir coverage \
             --exclude-files "src/main.rs" \
+            --test-threads 1 \
             --timeout 120
 
       - name: Upload coverage report
