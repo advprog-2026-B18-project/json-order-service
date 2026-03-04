@@ -16,13 +16,13 @@ pub enum StatusHistoryIden {
     Timestamp,
 }
 
-#[derive(Debug,Serialize,Deserialize,sqlx::FromRow,ToSchema,Clone)]
+#[derive(Debug, Serialize, Deserialize, sqlx::FromRow, ToSchema, Clone)]
 pub struct StatusHistory {
     pub statushis_id: Uuid,
-    pub order_id:     Uuid,
-    pub status:       String,
-    pub changed_by:   String,
-    pub actor_role:   String,
-    pub notes:        Option<String>,
-    pub timestamp:    DateTime<Utc>,
+    pub order_id: Uuid,
+    pub status: String,
+    pub changed_by: String,
+    pub actor_role: String,
+    pub notes: Option<String>,
+    pub timestamp: DateTime<Utc>,
 }
