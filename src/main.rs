@@ -1,10 +1,10 @@
+mod base;
 mod db;
+mod handlers;
 mod models;
+mod repositories;
 #[cfg(test)]
 mod tests;
-mod base;
-mod repositories;
-mod handlers;
 
 #[tokio::main]
 async fn main() {
