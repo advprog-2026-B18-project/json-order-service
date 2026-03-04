@@ -6,7 +6,6 @@ use sqlx::types::Uuid;
 use utoipa::ToSchema;
 use validator::Validate;
 
-// ── SeaQuery Identifiers ──────────────────────────────────────────
 #[derive(Iden)]
 pub enum OrderIden {
     Orders,
