@@ -16,6 +16,7 @@ RUN rm -f target/release/deps/json_order_service*
 
 # Build real source
 COPY . .
+ENV SQLX_OFFLINE=true
 RUN cargo build --release
 
 # ─── Stage 2: Runtime ────────────────────────────────────────────────────────
