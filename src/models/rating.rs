@@ -1,24 +1,47 @@
+use chrono::{DateTime, Utc};
+use sea_query::Iden;
 use serde::{Deserialize, Serialize};
 use sqlx::types::Uuid;
-use chrono::{DateTime, Utc};
+use utoipa::ToSchema;
+use validator::Validate;
 
-#[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Iden)]
+pub enum RatingIden {
+    Ratings,
+    RatingId,
+    OrderId,
+    TitipersId,
+    JastiperRating,
+    JastiperReview,
+    ProductRating,
+    ProductReview,
+    ProductImages,
+    CreatedAt,
+}
+
+#[derive(Debug, Serialize, Deserialize, sqlx::FromRow, ToSchema)]
 pub struct Rating {
-    pub id: Uuid,
+    pub rating_id: Uuid,
     pub order_id: Uuid,
     pub titipers_id: Uuid,
-    pub jastiper_id: Uuid,
-    pub product_id: Uuid,
-    pub jastiper_rating: Option<i16>,
-    pub product_rating: Option<i16>,
-    pub review: Option<String>,
+    pub jastiper_rating: f64,
+    pub jastiper_review: Option<String>,
+    pub product_rating: f64,
+    pub product_review: Option<String>,
+    pub product_images: Vec<String>,
     pub created_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema, Validate)]
 pub struct CreateRatingRequest {
-    pub order_id: Uuid,
-    pub jastiper_rating: i16,
-    pub product_rating: i16,
-    pub review: Option<String>,
+    #[validate(range(min = 1.0, max = 5.0))]
+    pub jastiper_rating: f64,
+    #[validate(length(max = 1000))]
+    pub jastiper_review: Option<String>,
+    #[validate(range(min = 1.0, max = 5.0))]
+    pub product_rating: f64,
+    #[validate(length(max = 1000))]
+    pub product_review: Option<String>,
+    #[validate(length(max = 3))]
+    pub product_images: Option<Vec<String>>,
 }
