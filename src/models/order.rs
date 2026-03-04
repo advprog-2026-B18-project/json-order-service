@@ -1,7 +1,8 @@
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::types::Uuid;
-use chrono::{DateTime, Utc};
 
+#[allow(dead_code)]
 #[derive(Debug, Serialize, Deserialize, sqlx::Type, Clone, PartialEq)]
 #[sqlx(type_name = "order_status", rename_all = "PascalCase")]
 pub enum OrderStatus {
@@ -13,6 +14,7 @@ pub enum OrderStatus {
     Cancelled,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
 pub struct Order {
     pub id: Uuid,
@@ -29,6 +31,7 @@ pub struct Order {
     pub updated_at: DateTime<Utc>,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 pub struct CreateOrderRequest {
     pub product_id: Uuid,
@@ -38,6 +41,7 @@ pub struct CreateOrderRequest {
     pub voucher_code: Option<String>,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
 pub struct OrderStatusHistory {
     pub id: Uuid,

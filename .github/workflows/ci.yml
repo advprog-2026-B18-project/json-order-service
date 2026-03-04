@@ -8,7 +8,10 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+<<<<<<< HEAD
   DATABASE_URL: ${{ secrets.DATABASE_URL }}
+=======
+>>>>>>> ce57ed91463c70cf3f5d3eaef15d1a23c111fdc5
 
 jobs:
   # ─────────────────────────────────────────────
@@ -39,7 +42,22 @@ jobs:
         run: cargo fmt --all -- --check
 
       - name: Run Clippy
+<<<<<<< HEAD
         run: cargo clippy --all-targets --all-features -- -D warnings
+=======
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          cargo clippy --all-targets --all-features --message-format=json 2>/dev/null \
+            | tee clippy-report.json || true
+          cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: Upload clippy report
+        uses: actions/upload-artifact@v4
+        with:
+          name: clippy-report
+          path: clippy-report.json
+>>>>>>> ce57ed91463c70cf3f5d3eaef15d1a23c111fdc5
 
   # ─────────────────────────────────────────────
   # 2. TEST — Unit & Integration tests
@@ -64,9 +82,12 @@ jobs:
           --health-timeout 5s
           --health-retries 5
 
+<<<<<<< HEAD
     env:
       DATABASE_URL: postgres://postgres:postgres@localhost:5432/order_service_test
 
+=======
+>>>>>>> ce57ed91463c70cf3f5d3eaef15d1a23c111fdc5
     steps:
       - uses: actions/checkout@v4
 
@@ -83,6 +104,7 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-
 
+<<<<<<< HEAD
       - name: Install cargo-tarpaulin (coverage)
         run: cargo install cargo-tarpaulin
 
@@ -93,12 +115,31 @@ jobs:
             --output-dir coverage \
             --exclude-files "src/main.rs" \
             --timeout 120
+=======
+      - name: Install cargo-tarpaulin
+        run: cargo install cargo-tarpaulin
+
+      - name: Run tests with coverage
+        env:
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/order_service_test
+        run: |
+          cargo tarpaulin \
+            --out Lcov \
+            --output-dir coverage \
+            --exclude-files "src/main.rs" \
+            --timeout 120 \
+            -- --test-threads=1
+>>>>>>> ce57ed91463c70cf3f5d3eaef15d1a23c111fdc5
 
       - name: Upload coverage report
         uses: actions/upload-artifact@v4
         with:
           name: coverage-report
+<<<<<<< HEAD
           path: coverage/cobertura.xml
+=======
+          path: coverage/lcov.info
+>>>>>>> ce57ed91463c70cf3f5d3eaef15d1a23c111fdc5
 
   # ─────────────────────────────────────────────
   # 3. SONARQUBE — Static analysis
@@ -111,7 +152,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+<<<<<<< HEAD
           fetch-depth: 0  # full history for blame info
+=======
+          fetch-depth: 0
+
+      - name: Download clippy report
+        uses: actions/download-artifact@v4
+        with:
+          name: clippy-report
+          path: .
+>>>>>>> ce57ed91463c70cf3f5d3eaef15d1a23c111fdc5
 
       - name: Download coverage report
         uses: actions/download-artifact@v4
@@ -144,11 +195,22 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+<<<<<<< HEAD
+=======
+      - name: Set lowercase repo name
+        run: echo "REPO_LOWER=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
+
+>>>>>>> ce57ed91463c70cf3f5d3eaef15d1a23c111fdc5
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
           context: .
           push: true
           tags: |
+<<<<<<< HEAD
             ghcr.io/${{ github.repository }}:latest
             ghcr.io/${{ github.repository }}:${{ github.sha }}
+=======
+            ghcr.io/${{ env.REPO_LOWER }}:latest
+            ghcr.io/${{ env.REPO_LOWER }}:${{ github.sha }}
+>>>>>>> ce57ed91463c70cf3f5d3eaef15d1a23c111fdc5
