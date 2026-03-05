@@ -1,4 +1,8 @@
-use axum::{http::StatusCode, response::{IntoResponse, Response}, Json};
+use axum::{
+    Json,
+    http::StatusCode,
+    response::{IntoResponse, Response},
+};
 use serde_json::json;
 use thiserror::Error;
 
@@ -29,9 +33,9 @@ pub enum AppError {
     // ── 422 Invalid status transition ──
     #[error("Invalid status transition from {current} to {requested}")]
     InvalidStatusTransition {
-        current:   String,
+        current: String,
         requested: String,
-        valid:     Vec<String>,
+        valid: Vec<String>,
     },
 
     // ── 500 ──
@@ -52,15 +56,18 @@ impl IntoResponse for AppError {
                 StatusCode::BAD_REQUEST,
                 json!({"success":false,"message":m,"errors":[{"field":"unknown","message":m}]}),
             ),
-            AppError::Forbidden(m) =>
-                (StatusCode::FORBIDDEN, json!({"success":false,"message":m})),
-            AppError::NotFound(m) =>
-                (StatusCode::NOT_FOUND, json!({"success":false,"message":m})),
-            AppError::Conflict(m) =>
-                (StatusCode::CONFLICT, json!({"success":false,"message":m})),
-            AppError::UnprocessableEntity(m) =>
-                (StatusCode::UNPROCESSABLE_ENTITY, json!({"success":false,"message":m})),
-            AppError::InvalidStatusTransition{current,requested,valid} => (
+            AppError::Forbidden(m) => (StatusCode::FORBIDDEN, json!({"success":false,"message":m})),
+            AppError::NotFound(m) => (StatusCode::NOT_FOUND, json!({"success":false,"message":m})),
+            AppError::Conflict(m) => (StatusCode::CONFLICT, json!({"success":false,"message":m})),
+            AppError::UnprocessableEntity(m) => (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                json!({"success":false,"message":m}),
+            ),
+            AppError::InvalidStatusTransition {
+                current,
+                requested,
+                valid,
+            } => (
                 StatusCode::UNPROCESSABLE_ENTITY,
                 json!({
                     "success": false,
@@ -70,12 +77,18 @@ impl IntoResponse for AppError {
                     "valid_transitions": valid,
                 }),
             ),
-            AppError::Database(e) =>
-                (StatusCode::INTERNAL_SERVER_ERROR, json!({"success":false,"message":e.to_string()})),
-            AppError::LimitExceeded =>
-                (StatusCode::BAD_REQUEST, json!({"success":false,"message":"Limit exceeded: max 1000"})),
-            AppError::Internal =>
-                (StatusCode::INTERNAL_SERVER_ERROR, json!({"success":false,"message":"Internal error"})),
+            AppError::Database(e) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                json!({"success":false,"message":e.to_string()}),
+            ),
+            AppError::LimitExceeded => (
+                StatusCode::BAD_REQUEST,
+                json!({"success":false,"message":"Limit exceeded: max 1000"}),
+            ),
+            AppError::Internal => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                json!({"success":false,"message":"Internal error"}),
+            ),
         };
         (status, Json(body)).into_response()
     }
