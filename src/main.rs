@@ -18,6 +18,7 @@ use utoipa_scalar::{Scalar, Servable};
     paths(
         crate::handlers::order::my_purchases,
         crate::handlers::order::my_sales,
+        crate::handlers::order::get_order,
     ),
     tags(
         (name = "Orders", description = "Order management endpoints")

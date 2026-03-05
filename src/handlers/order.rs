@@ -2,13 +2,32 @@ use crate::error::AppError;
 use crate::models::order::{OrderFilter, PaginationParams};
 use crate::repositories::order as repo;
 use axum::Json;
-use axum::extract::{Query, State};
+use axum::extract::{Path, Query, State};
 use serde_json::json;
 use sqlx::PgPool;
 use std::sync::Arc;
 use uuid::Uuid;
 
 use utoipa::ToSchema;
+
+// ── GET /orders/{order_id} — Detail ──────────────────────────────
+#[utoipa::path(
+    get, path = "/orders/{order_id}",
+    tag = "Orders",
+    params(("order_id" = Uuid, Path, description = "ID unik pesanan")),
+    responses(
+        (status=200, description="Data pesanan ditemukan", body=Order),
+        (status=403, description="Bukan pesanan milik user ini"),
+        (status=404, description="Pesanan tidak ditemukan"),
+    )
+)]
+pub async fn get_order(
+    State(pool): State<Arc<PgPool>>,
+    Path(order_id): Path<Uuid>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let order = repo::find_by_id(&pool, order_id).await?;
+    Ok(Json(json!({"success":true,"message":"OK","data":order})))
+}
 
 // --- GET /orders/my/purchases ---
 #[utoipa::path(
