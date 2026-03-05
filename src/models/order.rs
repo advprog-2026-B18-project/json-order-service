@@ -26,7 +26,6 @@ pub enum OrderIden {
     Courier,
     CancellationReason,
     CancelledBy,
-    StatusHistory,
     CompletedAt,
     CreatedAt,
     UpdatedAt,
@@ -105,6 +104,30 @@ pub struct StatusHistory {
 }
 
 #[derive(Debug, Serialize, Deserialize, sqlx::FromRow, ToSchema)]
+pub struct OrderStatusHistory {
+    pub statushis_id: Uuid,
+    pub order_id: Uuid,
+    pub status: String,
+    pub changed_by: String,
+    pub actor_role: String,
+    pub notes: Option<String>,
+    pub timestamp: DateTime<Utc>,
+}
+
+#[derive(Iden)]
+pub enum OrderStatusHistoryIden {
+    #[iden = "order_status_history"]
+    Table,
+    StatusHisId,
+    OrderId,
+    Status,
+    ChangedBy,
+    ActorRole,
+    Notes,
+    Timestamp,
+}
+
+#[derive(Debug, Serialize, Deserialize, sqlx::FromRow, ToSchema)]
 pub struct Order {
     pub order_id: Uuid,
     pub titipers_id: Uuid,
@@ -122,7 +145,6 @@ pub struct Order {
     pub courier: Option<String>,             // diisi saat SHIPPED
     pub cancellation_reason: Option<String>, // VARCHAR sesuai schema
     pub cancelled_by: Option<CancelledBy>,   // cancelled_by_enum
-    pub status_history: JsonValue,           // JSONB ARRAY → Vec<StatusHistory>
     pub completed_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
