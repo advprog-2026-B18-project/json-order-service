@@ -1,0 +1,43 @@
+name: Deploy Rust Axum Service
+on:
+  push:
+    branches: [ main ]
+
+env:
+  SERVICE_NAME: rust-axum-app
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and Push Docker Image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ghcr.io/advprog-2026-b18-project/json-order-service:latest
+
+      - name: Deploy to EC2
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            docker pull ghcr.io/advprog-2026-b18-project/json-order-service:latest
+            docker compose -f /home/ubuntu/docker-compose.yml up -d --no-deps --build ${{ env.SERVICE_NAME }}
+            docker image prune -f
