@@ -7,7 +7,8 @@ use validator::Validate;
 
 #[derive(Iden)]
 pub enum RatingIden {
-    Ratings,
+    #[iden = "rating"]
+    Rating,
     RatingId,
     OrderId,
     TitipersId,

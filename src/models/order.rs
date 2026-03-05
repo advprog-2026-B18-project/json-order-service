@@ -153,7 +153,6 @@ pub struct CancelRequest {
     pub notes: Option<String>,
 }
 
-
 #[derive(Debug, Deserialize, ToSchema, Default)]
 pub struct OrderFilter {
     pub status: Option<OrderStatus>,
