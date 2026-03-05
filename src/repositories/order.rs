@@ -106,10 +106,7 @@ pub async fn find_all(
     Ok((orders, total_count))
 }
 
-pub async fn find_by_id(
-    pool: &PgPool,
-    order_id: Uuid
-) -> Result<Order> {
+pub async fn find_by_id(pool: &PgPool, order_id: Uuid) -> Result<Order> {
     let sql = Query::select()
         .from(OrderIden::Order)
         .columns([
