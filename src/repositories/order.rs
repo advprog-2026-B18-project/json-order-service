@@ -10,28 +10,9 @@ use crate::{
     error::{AppError, Result},
     models::order::{
         CancelRequest, CancelledBy, CreateOrderRequest, Order, OrderFilter, OrderIden, OrderStatus,
-        PaginationParams, ProductSnapshot, StatusHistory, UpdateStatusRequest,
+        PaginationParams, ProductSnapshot, UpdateStatusRequest,
     },
 };
-
-// ─── Helper: build StatusHistory entry ───────────────────────────────────────
-fn new_history_entry(
-    order_id: Uuid,
-    status: &OrderStatus,
-    changed_by: &str,
-    actor_role: &str,
-    notes: Option<String>,
-) -> serde_json::Value {
-    json!({
-        "statushis_id": Uuid::new_v4().to_string(),
-        "order_id":     order_id.to_string(),
-        "status":       format!("{:?}", status).to_uppercase(),
-        "changed_by":   changed_by,
-        "actor_role":   actor_role,
-        "notes":        notes,
-        "timestamp":    Utc::now().to_rfc3339(),
-    })
-}
 
 pub async fn find_all(
     pool: &PgPool,
@@ -62,7 +43,6 @@ pub async fn find_all(
             OrderIden::Courier,
             OrderIden::CancellationReason,
             OrderIden::CancelledBy,
-            OrderIden::StatusHistory,
             OrderIden::CompletedAt,
             OrderIden::CreatedAt,
             OrderIden::UpdatedAt,
@@ -107,7 +87,7 @@ pub async fn find_all(
 }
 
 pub async fn find_by_id(pool: &PgPool, order_id: Uuid) -> Result<Option<Order>> {
-    let sql = Query::select()
+    let (sql, values) = Query::select()
         .from(OrderIden::Order)
         .columns([
             OrderIden::OrderId,
@@ -126,17 +106,14 @@ pub async fn find_by_id(pool: &PgPool, order_id: Uuid) -> Result<Option<Order>> 
             OrderIden::Courier,
             OrderIden::CancellationReason,
             OrderIden::CancelledBy,
-            OrderIden::StatusHistory,
             OrderIden::CompletedAt,
             OrderIden::CreatedAt,
             OrderIden::UpdatedAt,
         ])
         .and_where(Expr::col(OrderIden::OrderId).eq(order_id))
-        .build_sqlx(PostgresQueryBuilder)
-        .0;
+        .build_sqlx(PostgresQueryBuilder);
 
-    let order = sqlx::query_as::<_, Order>(&sql)
-        .bind(order_id)
+    let order = sqlx::query_as_with::<_, Order, _>(&sql, values)
         .fetch_optional(pool)
         .await?;
 
@@ -148,7 +125,7 @@ pub async fn create(
     titipers_id: Uuid,
     jastiper_id: Uuid,
     order_id: Uuid,
-    req: CreateOrderRequest,             // ← nama baru
+    req: CreateOrderRequest,
     product_snapshot: serde_json::Value, // ← snapshot diterima dari handler
     unit_price: i32,
     service_fee: i32,
@@ -156,14 +133,6 @@ pub async fn create(
 ) -> Result<Order> {
     let order_id = Uuid::new_v4();
     let now = Utc::now();
-
-    let initial_history = json!([new_history_entry(
-        order_id,
-        &OrderStatus::Paid,
-        &titipers_id.to_string(),
-        "titipers",
-        None
-    )]);
 
     let (sql, values) = Query::insert()
         .into_table(OrderIden::Order)
@@ -180,7 +149,6 @@ pub async fn create(
             OrderIden::Status,
             OrderIden::ShippingAddress,
             OrderIden::NoteToJastiper,
-            OrderIden::StatusHistory,
             OrderIden::CreatedAt,
             OrderIden::UpdatedAt,
         ])
@@ -197,7 +165,6 @@ pub async fn create(
             "PAID".into(),
             serde_json::to_value(req.shipping_address).unwrap().into(),
             req.note_to_jastiper.unwrap_or_default().into(),
-            initial_history.into(),
             now.into(),
             now.into(),
         ])

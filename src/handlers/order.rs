@@ -1,16 +1,242 @@
 use crate::error::AppError;
-use crate::models::order::{OrderFilter, PaginationParams};
+use crate::models::order::{CreateOrderRequest, OrderFilter, PaginationParams};
 use crate::repositories::order as repo;
 use axum::Json;
 use axum::extract::{Path, Query, State};
+use reqwest::StatusCode;
 use serde_json::json;
 use sqlx::PgPool;
 use std::sync::Arc;
 use uuid::Uuid;
 
 use utoipa::ToSchema;
+use validator::Validate;
 
-// ── GET /orders/{order_id} — Detail ──────────────────────────────
+pub(crate) async fn reserve_stock(
+    product_id: Uuid,
+    order_id: Uuid,
+    quantity: i32,
+) -> Result<(), AppError> {
+    let inventory_url = std::env::var("INVENTORY_SERVICE_URL")
+        .unwrap_or_else(|_| "http://localhost:8081".to_string());
+
+    let service_key =
+        std::env::var("INTERNAL_SERVICE_KEY").expect("INTERNAL_SERVICE_KEY harus diset di .env");
+
+    let url = format!(
+        "{}/internal/products/{}/stock/reserve",
+        inventory_url, product_id
+    );
+
+    let client = reqwest::Client::new();
+    let response = client
+        .post(&url)
+        .header("X-Service-Key", service_key)
+        .json(&serde_json::json!({
+            "order_id": order_id,
+            "quantity": quantity,
+        }))
+        .send()
+        .await
+        .map_err(|_| AppError::Internal)?;
+
+    match response.status().as_u16() {
+        200 => Ok(()),
+        404 => Err(AppError::NotFound("Produk tidak ditemukan".to_string())),
+        409 => Err(AppError::Conflict("Stok tidak mencukupi".to_string())),
+        422 => Err(AppError::UnprocessableEntity(
+            "Produk tidak dalam status ACTIVE".to_string(),
+        )),
+        _ => Err(AppError::Internal),
+    }
+}
+
+pub(crate) async fn release_stock(
+    product_id: Uuid,
+    order_id: Uuid,
+    quantity: i32,
+) -> Result<(), AppError> {
+    let inventory_url = std::env::var("INVENTORY_SERVICE_URL")
+        .unwrap_or_else(|_| "http://localhost:8081".to_string());
+
+    let service_key =
+        std::env::var("INTERNAL_SERVICE_KEY").expect("INTERNAL_SERVICE_KEY harus diset di .env");
+
+    let url = format!(
+        "{}/internal/products/{}/stock/release",
+        inventory_url, product_id
+    );
+
+    let client = reqwest::Client::new();
+    let response = client
+        .post(&url)
+        .header("X-Service-Key", service_key)
+        .json(&serde_json::json!({
+            "order_id": order_id,
+            "quantity": quantity,
+        }))
+        .send()
+        .await
+        .map_err(|_| AppError::Internal)?;
+
+    match response.status().as_u16() {
+        200 => Ok(()),
+        // 404 bisa dihapus
+        404 => Err(AppError::NotFound("Produk tidak ditemukan".to_string())),
+        409 => Err(AppError::Conflict("Stok tidak mencukupi".to_string())),
+        422 => Err(AppError::UnprocessableEntity(
+            "Produk tidak dalam status ACTIVE".to_string(),
+        )),
+        _ => Err(AppError::Internal),
+    }
+}
+
+pub(crate) async fn deduct_wallet(
+    user_id: Uuid,
+    order_id: Uuid,
+    amount: i64,
+    description: &str,
+) -> Result<(), AppError> {
+    let wallet_url =
+        std::env::var("WALLET_SERVICE_URL").unwrap_or_else(|_| "http://localhost:8082".to_string());
+
+    let service_key =
+        std::env::var("INTERNAL_SERVICE_KEY").expect("INTERNAL_SERVICE_KEY harus diset di .env");
+
+    let client = reqwest::Client::new();
+    let response = client
+        .post(format!("{}/internal/wallets/deduct", wallet_url))
+        .header("X-Service-Key", service_key)
+        .json(&serde_json::json!({
+            "user_id":     user_id,
+            "order_id":    order_id,
+            "amount":      amount,
+            "description": description,
+        }))
+        .send()
+        .await
+        .map_err(|_| AppError::Internal)?;
+
+    match response.status().as_u16() {
+        200 => Ok(()),
+        404 => Err(AppError::NotFound("User tidak ditemukan".to_string())),
+        // 409 = sudah diproses (idempotent), anggap sukses
+        409 => Ok(()),
+        422 => Err(AppError::UnprocessableEntity(
+            "Saldo tidak mencukupi".to_string(),
+        )),
+        _ => Err(AppError::Internal),
+    }
+}
+
+pub(crate) async fn fetch_product(product_id: Uuid) -> Result<serde_json::Value, AppError> {
+    let inventory_url = std::env::var("INVENTORY_SERVICE_URL")
+        .unwrap_or_else(|_| "http://localhost:8083".to_string()); // port inventory
+
+    let client = reqwest::Client::new();
+    let response = client
+        .get(format!("{}/products/{}", inventory_url, product_id))
+        .send()
+        .await
+        .map_err(|_| AppError::Internal)?;
+
+    match response.status().as_u16() {
+        200 => {
+            let body: serde_json::Value = response.json().await.map_err(|_| AppError::Internal)?;
+            Ok(body["data"].clone())
+        }
+        404 => Err(AppError::NotFound("Produk tidak ditemukan".to_string())),
+        422 => Err(AppError::UnprocessableEntity(
+            "Produk tidak aktif".to_string(),
+        )),
+        _ => Err(AppError::Internal),
+    }
+}
+
+#[utoipa::path(
+    post, path = "/orders",
+    tag = "Orders",
+    request_body = CreateOrderRequest,
+    responses(
+        (status=201, description="Pesanan berhasil dibuat", body=Order),
+        (status=400, description="Data tidak valid"),
+        (status=403, description="Jastiper mencoba beli produk sendiri"),
+        (status=409, description="Stok tidak mencukupi"),
+        (status=422, description="Saldo tidak cukup / produk tidak aktif"),
+    )
+)]
+pub async fn checkout(
+    State(pool): State<Arc<PgPool>>,
+    Json(req): Json<CreateOrderRequest>,
+) -> Result<(StatusCode, Json<serde_json::Value>), AppError> {
+    req.validate()
+        .map_err(|e| AppError::Validation(e.to_string()))?;
+
+    let titipers_id = Uuid::new_v4(); // placeholder JWT
+    let order_id = Uuid::new_v4();
+
+    let product = fetch_product(req.product_id).await?;
+
+    let jastiper_id: Uuid =
+        serde_json::from_value(product["jastiper_id"].clone()).map_err(|_| AppError::Internal)?;
+    let unit_price = product["price"].as_i64().unwrap_or(0) as i32;
+    let service_fee = product["service_fee"].as_i64().unwrap_or(0) as i32;
+    let total_price = (unit_price + service_fee) * req.quantity;
+
+    let product_snapshot = json!({
+        "product_id":     req.product_id,
+        "name":           product["name"],
+        "description":    product["description"],
+        "image_url":      product["images"][0],
+        "origin_country": product["origin_country"],
+        "purchase_date":  product["purchase_date"],
+        "unit_price":     unit_price,
+        "service_fee":    service_fee,
+    });
+
+    reserve_stock(req.product_id, order_id, req.quantity).await?;
+
+    let description = format!("Pembayaran Order #{}", order_id);
+    if let Err(e) = deduct_wallet(titipers_id, order_id, total_price as i64, &description).await {
+        let _ = release_stock(req.product_id, order_id, req.quantity).await;
+        return Err(e);
+    }
+
+    let order = repo::create(
+        &pool,
+        titipers_id,
+        jastiper_id,
+        order_id,
+        req,
+        product_snapshot,
+        unit_price,
+        service_fee,
+        total_price,
+    )
+    .await?;
+
+    // TODO
+    // ).await {
+    //     Ok(order) => order,
+    //     Err(e) => {
+    //     // Rollback: release stok dan refund saldo
+    //     let _ = release_stock(req.product_id, order_id, req.quantity).await;
+    //     let _ = refund_wallet(titipers_id, order_id, total_price as i64).await;
+    //     return Err(e);
+    //     }
+    // };
+
+    Ok((
+        StatusCode::CREATED,
+        Json(json!({
+            "success": true,
+            "message": "Pesanan berhasil dibuat",
+            "data": order
+        })),
+    ))
+}
+
+// --- GET /orders/{order_id} ---
 #[utoipa::path(
     get, path = "/orders/{order_id}",
     tag = "Orders",
