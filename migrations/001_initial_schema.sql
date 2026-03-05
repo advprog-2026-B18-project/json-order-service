@@ -16,8 +16,8 @@ CREATE TYPE cancellation_reason AS ENUM (
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 -- ── orders ──────────────────────────────────────────────────────
-CREATE TABLE IF NOT EXISTS orders (
-                                      order_id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+CREATE TABLE IF NOT EXISTS order (
+    order_id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     titipers_id         UUID NOT NULL,
     jastiper_id         UUID NOT NULL,
     product_id          UUID NOT NULL,
@@ -50,7 +50,7 @@ CREATE TABLE IF NOT EXISTS order_status_history (
     );
 
 -- ── ratings ──────────────────────────────────────────────────────
-CREATE TABLE IF NOT EXISTS ratings (
+CREATE TABLE IF NOT EXISTS rating (
                                        rating_id       UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     order_id        UUID NOT NULL UNIQUE REFERENCES orders(order_id),
     titipers_id     UUID NOT NULL,
