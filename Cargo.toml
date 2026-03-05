@@ -1,26 +1,60 @@
 [package]
-name = "json-order-service"
+name    = "json-order-service"
 version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-argon2 = "0.5.3"
-async-trait = "0.1.89"
-chrono = { version = "0.4.43", features = ["serde"] }
-dotenv = "0.15.0"
-jsonwebtoken = "9.3.1"
-serde = { version = "1.0.228", features = ["derive"] }
-serde_json = "1.0.149"
-sqlx = { version = "0.8.6", features = ["runtime-async-std-native-tls", "postgres", "chrono", "uuid"] }
-uuid = { version = "1.21.0", features = ["serde", "v4"] }
-validator = { version = "0.20.0", features = ["derive"] }
-axum = "0.8.8"
-axum-extra = { version = "0.12.5", features = ["cookie"]}
-tokio = { version = "1.49.0", features = ["full"] }
-tower = "0.5.3"
-time = "0.3.47"
-tower-http = { version = "0.6.8", features = ["cors","trace"] }
-tracing-subscriber = { version = "0.3.22"}
-lettre = "0.11.19"
-regex = "1.12.3"
-dotenvy = "0.15.7"
+# Web
+axum         = "0.7"
+axum-extra   = { version = "0.9", features = ["cookie", "typed-header"] }
+tokio        = { version = "1", features = ["full"] }
+tower-http   = { version = "0.5", features = ["cors", "trace"] }
+
+# Database — Neon DB (wajib TLS)
+sqlx = { version = "0.8", features = [
+    "runtime-tokio-native-tls", "postgres",
+    "uuid", "chrono", "macros", "json"
+] }
+
+# Query builder
+sea-query = { version = "0.32.0", features = [
+    "backend-postgres",
+    "with-uuid",
+    "with-chrono",
+    "with-json",
+] }
+sea-query-binder = { version = "0.7", features = [
+    "sqlx-postgres",
+    "with-uuid",
+    "with-chrono",
+    "with-json"
+] }
+
+# Swagger / OpenAPI
+utoipa            = { version = "4", features = ["axum_extras","uuid","chrono"] }
+#utoipa-swagger-ui = { version = "8", features = ["axum"] }
+utoipa-scalar = { version = "0.1", features = ["axum"] }
+
+# Serialisasi
+serde      = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Utilities
+uuid        = { version = "1", features = ["serde","v4"] }
+chrono      = { version = "0.4", features = ["serde"] }
+dotenvy     = "0.15"
+thiserror   = "1"
+tracing     = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Auth
+jsonwebtoken = "9"
+argon2       = "0.5.3"
+
+# Validasi
+validator = { version = "0.18", features = ["derive"] }
+repo = "0.14.6"
+
+# Client Request
+reqwest = { version = "0.12", features = ["json"] }
+
