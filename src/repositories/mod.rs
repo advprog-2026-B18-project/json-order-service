@@ -1,2 +1,2 @@
-mod order;
+pub(crate) mod order;
 mod rating;
