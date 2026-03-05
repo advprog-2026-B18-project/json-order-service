@@ -8,7 +8,7 @@ mod repositories;
 mod tests;
 
 use axum::Router;
-use axum::routing::get;
+use axum::routing::{get, post};
 use std::sync::Arc;
 use utoipa::OpenApi;
 use utoipa_scalar::{Scalar, Servable};
@@ -19,6 +19,7 @@ use utoipa_scalar::{Scalar, Servable};
         crate::handlers::order::my_purchases,
         crate::handlers::order::my_sales,
         crate::handlers::order::get_order,
+        crate::handlers::order::checkout,
     ),
     tags(
         (name = "Orders", description = "Order management endpoints")
@@ -50,8 +51,10 @@ async fn main() {
 
     // Router API dengan state (pool)
     let api_router = Router::new()
+        .route("/orders", post(handlers::order::checkout)) // ← tambah ini
         .route("/orders/my/purchases", get(handlers::order::my_purchases))
         .route("/orders/my/sales", get(handlers::order::my_sales))
+        .route("/orders/{order_id}", get(handlers::order::get_order))
         .with_state(shared_pool);
 
     let app: Router = Router::new()
