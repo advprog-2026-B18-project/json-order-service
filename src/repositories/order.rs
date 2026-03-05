@@ -87,7 +87,7 @@ pub async fn find_all(
 }
 
 pub async fn find_by_id(pool: &PgPool, order_id: Uuid) -> Result<Option<Order>> {
-    let sql = Query::select()
+    let (sql, values) = Query::select()
         .from(OrderIden::Order)
         .columns([
             OrderIden::OrderId,
@@ -111,11 +111,9 @@ pub async fn find_by_id(pool: &PgPool, order_id: Uuid) -> Result<Option<Order>> 
             OrderIden::UpdatedAt,
         ])
         .and_where(Expr::col(OrderIden::OrderId).eq(order_id))
-        .build_sqlx(PostgresQueryBuilder)
-        .0;
+        .build_sqlx(PostgresQueryBuilder);
 
-    let order = sqlx::query_as::<_, Order>(&sql)
-        .bind(order_id)
+    let order = sqlx::query_as_with::<_, Order, _>(&sql, values)
         .fetch_optional(pool)
         .await?;
 
@@ -127,7 +125,7 @@ pub async fn create(
     titipers_id: Uuid,
     jastiper_id: Uuid,
     order_id: Uuid,
-    req: CreateOrderRequest,             // ← nama baru
+    req: CreateOrderRequest,
     product_snapshot: serde_json::Value, // ← snapshot diterima dari handler
     unit_price: i32,
     service_fee: i32,
