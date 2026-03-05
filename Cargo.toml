@@ -17,14 +17,14 @@ sqlx = { version = "0.8", features = [
 ] }
 
 # Query builder
-sea-query = { version = "0.31", features = [
+sea-query = { version = "0.32.0", features = [
     "backend-postgres",
     "with-uuid",
     "with-chrono",
-    "with-json"
+    "with-json",
 ] }
 sea-query-binder = { version = "0.7", features = [
-    "sqlx-postgres",  # Ini tetap karena sea-query-binder punya fitur sqlx-postgres
+    "sqlx-postgres",
     "with-uuid",
     "with-chrono",
     "with-json"
