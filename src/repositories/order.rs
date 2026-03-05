@@ -8,19 +8,18 @@ use uuid::Uuid;
 use crate::{
     error::{AppError, Result},
     models::order::{
-        CancelledBy, CancelRequest, CreateOrderRequest, Order, OrderFilter,
-        OrderIden, OrderStatus, PaginationParams, ProductSnapshot,
-        StatusHistory, UpdateStatusRequest,
+        CancelRequest, CancelledBy, CreateOrderRequest, Order, OrderFilter, OrderIden, OrderStatus,
+        PaginationParams, ProductSnapshot, StatusHistory, UpdateStatusRequest,
     },
 };
 
 // ─── Helper: build StatusHistory entry ───────────────────────────────────────
 fn new_history_entry(
-    order_id:   Uuid,
-    status:     &OrderStatus,
+    order_id: Uuid,
+    status: &OrderStatus,
     changed_by: &str,
     actor_role: &str,
-    notes:      Option<String>,
+    notes: Option<String>,
 ) -> serde_json::Value {
     json!({
         "statushis_id": Uuid::new_v4().to_string(),
@@ -65,24 +64,24 @@ pub async fn find_by_id(pool: &PgPool, order_id: Uuid) -> Result<Order> {
         "#,
         order_id
     )
-        .fetch_optional(pool)
-        .await?
-        .ok_or_else(|| AppError::NotFound(format!("Order {} not found", order_id)))?;
+    .fetch_optional(pool)
+    .await?
+    .ok_or_else(|| AppError::NotFound(format!("Order {} not found", order_id)))?;
 
     Ok(order)
 }
 
 // ─── find_all ─────────────────────────────────────────────────────────────────
 pub async fn find_all(
-    pool:   &PgPool,
+    pool: &PgPool,
     filter: Option<OrderFilter>,
     params: Option<PaginationParams>,
 ) -> Result<(Vec<Order>, i64)> {
-    let params    = params.unwrap_or_default();
-    let page      = params.page.unwrap_or(1).max(1);
-    let limit     = params.limit.unwrap_or(20).min(100);
-    let offset    = (page - 1) * limit;
-    let sort_by   = params.sort_by.unwrap_or_else(|| "created_at".into());
+    let params = params.unwrap_or_default();
+    let page = params.page.unwrap_or(1).max(1);
+    let limit = params.limit.unwrap_or(20).min(100);
+    let offset = (page - 1) * limit;
+    let sort_by = params.sort_by.unwrap_or_else(|| "created_at".into());
     let order_dir = params.order.unwrap_or_else(|| "desc".into());
 
     // Bangun WHERE clause dinamis
@@ -141,20 +140,18 @@ pub async fn find_all(
         "#
     );
 
-    let count_sql = format!(
-        r#"SELECT COUNT(*) FROM "order" WHERE {where_clause}"#
-    );
+    let count_sql = format!(r#"SELECT COUNT(*) FROM "order" WHERE {where_clause}"#);
 
     // Build query dengan bind values
-    let mut q      = sqlx::query_as::<_, Order>(&sql);
+    let mut q = sqlx::query_as::<_, Order>(&sql);
     let mut q_count = sqlx::query_scalar::<_, i64>(&count_sql);
 
     for val in &bind_vals {
-        q       = q.bind(val);
+        q = q.bind(val);
         q_count = q_count.bind(val);
     }
 
-    let orders      = q.fetch_all(pool).await?;
+    let orders = q.fetch_all(pool).await?;
     let total_count = q_count.fetch_one(pool).await?;
 
     Ok((orders, total_count))
@@ -163,21 +160,24 @@ pub async fn find_all(
 // ─── create ───────────────────────────────────────────────────────────────────
 // total_price TIDAK dimasukkan — GENERATED ALWAYS di DB
 pub async fn create(
-    pool:        &PgPool,
+    pool: &PgPool,
     titipers_id: Uuid,
-    snapshot:    ProductSnapshot,   // dari Modul Inventory
-    req:         CreateOrderRequest,
+    snapshot: ProductSnapshot, // dari Modul Inventory
+    req: CreateOrderRequest,
 ) -> Result<Order> {
-    let snapshot_json  = serde_json::to_value(&snapshot)
-        .map_err(|_| AppError::Internal)?;
-    let address_json   = serde_json::to_value(&req.shipping_address)
-        .map_err(|_| AppError::Internal)?;
-    let order_id       = Uuid::new_v4();
+    let snapshot_json = serde_json::to_value(&snapshot).map_err(|_| AppError::Internal)?;
+    let address_json =
+        serde_json::to_value(&req.shipping_address).map_err(|_| AppError::Internal)?;
+    let order_id = Uuid::new_v4();
 
     // Entry pertama status_history: PENDING oleh SYSTEM
-    let initial_history = json!([
-        new_history_entry(order_id, &OrderStatus::Pending, "SYSTEM", "SYSTEM", None)
-    ]);
+    let initial_history = json!([new_history_entry(
+        order_id,
+        &OrderStatus::Pending,
+        "SYSTEM",
+        "SYSTEM",
+        None
+    )]);
 
     let order = sqlx::query_as!(
         Order,
@@ -203,7 +203,7 @@ pub async fn create(
         "#,
         order_id,
         titipers_id,
-        req.jastiper_id,        // dari CreateOrderRequest (tidak ada di body, dari product data)
+        req.jastiper_id, // dari CreateOrderRequest (tidak ada di body, dari product data)
         req.product_id,
         snapshot_json,
         req.quantity,
@@ -213,19 +213,15 @@ pub async fn create(
         req.note_to_jastiper,
         initial_history,
     )
-        .fetch_one(pool)
-        .await?;
+    .fetch_one(pool)
+    .await?;
 
     Ok(order)
 }
 
 // ─── set_paid ─────────────────────────────────────────────────────────────────
 // Dipanggil dari internal handler ketika Wallet konfirmasi pembayaran
-pub async fn set_paid(
-    pool:                 &PgPool,
-    order_id:             Uuid,
-    wallet_transaction_id: Uuid,
-) -> Result<Order> {
+pub async fn set_paid(pool: &PgPool, order_id: Uuid, wallet_transaction_id: Uuid) -> Result<Order> {
     let order = find_by_id(pool, order_id).await?;
 
     // Idempotency: sudah PAID → return langsung
@@ -235,16 +231,22 @@ pub async fn set_paid(
 
     if !order.status.can_transition_to(&OrderStatus::Paid) {
         return Err(AppError::InvalidStatusTransition {
-            current:   format!("{:?}", order.status).to_uppercase(),
+            current: format!("{:?}", order.status).to_uppercase(),
             requested: "PAID".into(),
-            valid:     order.status.valid_next()
-                .iter().map(|s| format!("{:?}", s).to_uppercase()).collect(),
+            valid: order
+                .status
+                .valid_next()
+                .iter()
+                .map(|s| format!("{:?}", s).to_uppercase())
+                .collect(),
         });
     }
 
     let new_entry = new_history_entry(
-        order_id, &OrderStatus::Paid,
-        &wallet_transaction_id.to_string(), "SYSTEM",
+        order_id,
+        &OrderStatus::Paid,
+        &wallet_transaction_id.to_string(),
+        "SYSTEM",
         Some("Payment confirmed by Wallet service".into()),
     );
 
@@ -260,8 +262,8 @@ pub async fn set_paid(
         json!([new_entry]),
         order_id,
     )
-        .execute(pool)
-        .await?;
+    .execute(pool)
+    .await?;
 
     find_by_id(pool, order_id).await
 }
@@ -269,11 +271,11 @@ pub async fn set_paid(
 // ─── update_status ────────────────────────────────────────────────────────────
 // PATCH /orders/{order_id}/status — hanya Jastiper (PURCHASED atau SHIPPED)
 pub async fn update_status(
-    pool:        &PgPool,
-    order_id:    Uuid,
+    pool: &PgPool,
+    order_id: Uuid,
     jastiper_id: Uuid,
-    req:         UpdateStatusRequest,
-    actor_id:    Uuid,
+    req: UpdateStatusRequest,
+    actor_id: Uuid,
 ) -> Result<Order> {
     let order = find_by_id(pool, order_id).await?;
 
@@ -285,10 +287,14 @@ pub async fn update_status(
     // Validasi state machine
     if !order.status.can_transition_to(&req.status) {
         return Err(AppError::InvalidStatusTransition {
-            current:   format!("{:?}", order.status).to_uppercase(),
+            current: format!("{:?}", order.status).to_uppercase(),
             requested: format!("{:?}", req.status).to_uppercase(),
-            valid:     order.status.valid_next()
-                .iter().map(|s| format!("{:?}", s).to_uppercase()).collect(),
+            valid: order
+                .status
+                .valid_next()
+                .iter()
+                .map(|s| format!("{:?}", s).to_uppercase())
+                .collect(),
         });
     }
 
@@ -296,15 +302,17 @@ pub async fn update_status(
     if req.status == OrderStatus::Shipped {
         if req.tracking_number.is_none() || req.courier.is_none() {
             return Err(AppError::Validation(
-                "tracking_number and courier are required when status is SHIPPED".into()
+                "tracking_number and courier are required when status is SHIPPED".into(),
             ));
         }
     }
 
     let new_status_str = format!("{:?}", req.status).to_uppercase();
     let new_entry = new_history_entry(
-        order_id, &req.status,
-        &actor_id.to_string(), "JASTIPER",
+        order_id,
+        &req.status,
+        &actor_id.to_string(),
+        "JASTIPER",
         req.notes.clone(),
     );
 
@@ -325,19 +333,15 @@ pub async fn update_status(
         json!([new_entry]),
         order_id,
     )
-        .execute(pool)
-        .await?;
+    .execute(pool)
+    .await?;
 
     find_by_id(pool, order_id).await
 }
 
 // ─── confirm_receipt ──────────────────────────────────────────────────────────
 // PATCH /orders/{order_id}/confirm — Titipers konfirmasi penerimaan → COMPLETED
-pub async fn confirm_receipt(
-    pool:        &PgPool,
-    order_id:    Uuid,
-    titipers_id: Uuid,
-) -> Result<Order> {
+pub async fn confirm_receipt(pool: &PgPool, order_id: Uuid, titipers_id: Uuid) -> Result<Order> {
     let order = find_by_id(pool, order_id).await?;
 
     // Validasi akses
@@ -354,8 +358,10 @@ pub async fn confirm_receipt(
     }
 
     let new_entry = new_history_entry(
-        order_id, &OrderStatus::Completed,
-        &titipers_id.to_string(), "TITIPERS",
+        order_id,
+        &OrderStatus::Completed,
+        &titipers_id.to_string(),
+        "TITIPERS",
         Some("Penerimaan dikonfirmasi oleh Titipers".into()),
     );
 
@@ -372,8 +378,8 @@ pub async fn confirm_receipt(
         json!([new_entry]),
         order_id,
     )
-        .execute(pool)
-        .await?;
+    .execute(pool)
+    .await?;
 
     find_by_id(pool, order_id).await
 }
@@ -381,28 +387,31 @@ pub async fn confirm_receipt(
 // ─── cancel ───────────────────────────────────────────────────────────────────
 // POST /orders/{order_id}/cancel — Jastiper atau Admin
 pub async fn cancel(
-    pool:        &PgPool,
-    order_id:    Uuid,
-    actor_id:    Uuid,
-    actor_role:  &str,            // "JASTIPER" atau "ADMIN"
-    jastiper_id: Option<Uuid>,    // None jika actor adalah ADMIN
-    req:         CancelRequest,
+    pool: &PgPool,
+    order_id: Uuid,
+    actor_id: Uuid,
+    actor_role: &str,          // "JASTIPER" atau "ADMIN"
+    jastiper_id: Option<Uuid>, // None jika actor adalah ADMIN
+    req: CancelRequest,
 ) -> Result<Order> {
     let order = find_by_id(pool, order_id).await?;
 
     // Validasi akses untuk Jastiper
     if actor_role == "JASTIPER" {
         match jastiper_id {
-            Some(jid) if jid != order.jastiper_id =>
-                return Err(AppError::Forbidden("Access denied".into())),
-            None =>
-                return Err(AppError::Forbidden("Access denied".into())),
+            Some(jid) if jid != order.jastiper_id => {
+                return Err(AppError::Forbidden("Access denied".into()));
+            }
+            None => return Err(AppError::Forbidden("Access denied".into())),
             _ => {}
         }
     }
 
     // Tidak bisa cancel COMPLETED atau CANCELLED
-    if matches!(order.status, OrderStatus::Completed | OrderStatus::Cancelled) {
+    if matches!(
+        order.status,
+        OrderStatus::Completed | OrderStatus::Cancelled
+    ) {
         return Err(AppError::UnprocessableEntity(format!(
             "Order cannot be cancelled, current status: {:?}",
             order.status
@@ -416,8 +425,10 @@ pub async fn cancel(
     };
 
     let new_entry = new_history_entry(
-        order_id, &OrderStatus::Cancelled,
-        &actor_id.to_string(), actor_role,
+        order_id,
+        &OrderStatus::Cancelled,
+        &actor_id.to_string(),
+        actor_role,
         req.notes.clone(),
     );
 
@@ -437,8 +448,8 @@ pub async fn cancel(
         json!([new_entry]),
         order_id,
     )
-        .execute(pool)
-        .await?;
+    .execute(pool)
+    .await?;
 
     // TODO: Panggil Modul Wallet → refund
     // TODO: Panggil Modul Inventory → release stok
@@ -472,8 +483,8 @@ pub async fn auto_complete_shipped_orders(pool: &PgPool) -> Result<u64> {
         "#,
         system_entry,
     )
-        .execute(pool)
-        .await?;
+    .execute(pool)
+    .await?;
 
     Ok(result.rows_affected())
 }
