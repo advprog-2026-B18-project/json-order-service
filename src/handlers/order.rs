@@ -236,7 +236,7 @@ pub async fn checkout(
     ))
 }
 
-// --- GET /orders/my/{order_id} ---
+// --- GET /orders/{order_id} ---
 #[utoipa::path(
     get, path = "/orders/{order_id}",
     tag = "Orders",
