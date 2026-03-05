@@ -16,6 +16,11 @@ async fn main() {
     let pool = db::create_pool(&database_url).await;
     println!("Berhasil konek ke Neon DB!");
 
+    sqlx::migrate!("./migrations")
+        .run(&pool)
+        .await
+        .expect("Failed to run database migrations");
+
     // Test koneksi dengan ping — tidak butuh tabel apapun
     sqlx::query("SELECT 1")
         .execute(&pool)
