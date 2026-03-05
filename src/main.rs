@@ -7,9 +7,9 @@ mod repositories;
 #[cfg(test)]
 mod tests;
 
-use std::sync::Arc;
 use axum::Router;
 use axum::routing::get;
+use std::sync::Arc;
 use utoipa::OpenApi;
 use utoipa_scalar::{Scalar, Servable};
 
@@ -29,8 +29,7 @@ struct ApiDoc;
 async fn main() {
     dotenvy::dotenv().ok();
 
-    let database_url = std::env::var("DATABASE_URL")
-        .expect("DATABASE_URL harus diset di .env");
+    let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL harus diset di .env");
 
     let pool = db::create_pool(&database_url).await;
     println!("✅ Berhasil konek ke Neon DB!");
@@ -67,7 +66,5 @@ async fn main() {
     println!("📖 Swagger UI (Scalar)  →  http://localhost:3000/scalar");
     println!("📄 OpenAPI JSON →  http://localhost:3000/api-docs/openapi.json");
 
-    axum::serve(listener, app)
-        .await
-        .expect("Server error");
+    axum::serve(listener, app).await.expect("Server error");
 }
