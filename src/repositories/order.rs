@@ -148,8 +148,8 @@ pub async fn create(
     titipers_id: Uuid,
     jastiper_id: Uuid,
     order_id: Uuid,
-    req: CreateOrderRequest,        // ← nama baru
-    product_snapshot: serde_json::Value,  // ← snapshot diterima dari handler
+    req: CreateOrderRequest,             // ← nama baru
+    product_snapshot: serde_json::Value, // ← snapshot diterima dari handler
     unit_price: i32,
     service_fee: i32,
     total_price: i32,
@@ -157,9 +157,13 @@ pub async fn create(
     let order_id = Uuid::new_v4();
     let now = Utc::now();
 
-    let initial_history = json!([
-        new_history_entry(order_id, &OrderStatus::Paid, &titipers_id.to_string(), "titipers", None)
-    ]);
+    let initial_history = json!([new_history_entry(
+        order_id,
+        &OrderStatus::Paid,
+        &titipers_id.to_string(),
+        "titipers",
+        None
+    )]);
 
     let (sql, values) = Query::insert()
         .into_table(OrderIden::Order)
@@ -168,7 +172,7 @@ pub async fn create(
             OrderIden::TitipersId,
             OrderIden::JastiperId,
             OrderIden::ProductId,
-            OrderIden::ProductSnapshot,  // ← dari parameter
+            OrderIden::ProductSnapshot, // ← dari parameter
             OrderIden::Quantity,
             OrderIden::UnitPrice,
             OrderIden::ServiceFee,
@@ -185,11 +189,11 @@ pub async fn create(
             titipers_id.into(),
             jastiper_id.into(),
             req.product_id.into(),
-            product_snapshot.into(),     // ← dari parameter
+            product_snapshot.into(), // ← dari parameter
             req.quantity.into(),
-            unit_price.into(),           // ← dari parameter
-            service_fee.into(),          // ← dari parameter
-            total_price.into(),          // ← dari parameter
+            unit_price.into(),  // ← dari parameter
+            service_fee.into(), // ← dari parameter
+            total_price.into(), // ← dari parameter
             "PAID".into(),
             serde_json::to_value(req.shipping_address).unwrap().into(),
             req.note_to_jastiper.unwrap_or_default().into(),
@@ -199,10 +203,7 @@ pub async fn create(
         ])
         .build_sqlx(PostgresQueryBuilder);
 
-    sqlx::query_with(&sql, values)
-        .execute(pool)
-        .await?;
+    sqlx::query_with(&sql, values).execute(pool).await?;
 
-    find_by_id(pool, order_id).await?
-        .ok_or(AppError::Internal)
+    find_by_id(pool, order_id).await?.ok_or(AppError::Internal)
 }
