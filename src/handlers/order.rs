@@ -1,8 +1,8 @@
 use crate::error::AppError;
 use crate::middleware::auth::JwtClaims;
 use crate::models::order::{
-    CancelRequest, CancelledBy, CreateOrderRequest, OrderFilter, OrderStatus,
-    PaginationParams, UpdateStatusRequest,
+    CancelRequest, CancelledBy, CreateOrderRequest, OrderFilter, OrderStatus, PaginationParams,
+    UpdateStatusRequest,
 };
 use crate::repositories::order as repo;
 use axum::Json;
@@ -15,18 +15,15 @@ use uuid::Uuid;
 use validator::Validate;
 
 fn inventory_url() -> String {
-    std::env::var("INVENTORY_SERVICE_URL")
-        .unwrap_or_else(|_| "http://localhost:8081".to_string())
+    std::env::var("INVENTORY_SERVICE_URL").unwrap_or_else(|_| "http://localhost:8081".to_string())
 }
 
 fn wallet_url() -> String {
-    std::env::var("WALLET_SERVICE_URL")
-        .unwrap_or_else(|_| "http://localhost:8082".to_string())
+    std::env::var("WALLET_SERVICE_URL").unwrap_or_else(|_| "http://localhost:8082".to_string())
 }
 
 fn service_key() -> String {
-    std::env::var("INTERNAL_SERVICE_KEY")
-        .expect("INTERNAL_SERVICE_KEY harus diset di .env")
+    std::env::var("INTERNAL_SERVICE_KEY").expect("INTERNAL_SERVICE_KEY harus diset di .env")
 }
 
 async fn internal_post(url: &str, body: serde_json::Value) -> Result<u16, AppError> {
@@ -145,7 +142,6 @@ pub(crate) async fn refund_wallet(
     manage_wallet(WalletAction::Refund, user_id, order_id, amount, description).await
 }
 
-
 pub(crate) async fn fetch_product(product_id: Uuid) -> Result<serde_json::Value, AppError> {
     let url = format!(
         "{}/products/{}",
@@ -165,11 +161,12 @@ pub(crate) async fn fetch_product(product_id: Uuid) -> Result<serde_json::Value,
             Ok(body["data"].clone())
         }
         404 => Err(AppError::NotFound("Produk tidak ditemukan".to_string())),
-        422 => Err(AppError::UnprocessableEntity("Produk tidak aktif".to_string())),
+        422 => Err(AppError::UnprocessableEntity(
+            "Produk tidak aktif".to_string(),
+        )),
         _ => Err(AppError::Internal),
     }
 }
-
 
 fn paginated_response(
     message: &str,
@@ -178,7 +175,7 @@ fn paginated_response(
     page: Option<i64>,
     limit: Option<i64>,
 ) -> serde_json::Value {
-    let page  = page.unwrap_or(1);
+    let page = page.unwrap_or(1);
     let limit = limit.unwrap_or(20);
     json!({
         "success": true,
@@ -192,7 +189,6 @@ fn paginated_response(
         }
     })
 }
-
 
 async fn fetch_order_with_access_check(
     pool: &PgPool,
@@ -210,7 +206,6 @@ async fn fetch_order_with_access_check(
     }
     Ok(order)
 }
-
 
 /// POST /orders
 #[utoipa::path(
@@ -231,10 +226,11 @@ pub async fn checkout(
     claims: JwtClaims,
     Json(req): Json<CreateOrderRequest>,
 ) -> Result<(StatusCode, Json<serde_json::Value>), AppError> {
-    req.validate().map_err(|e| AppError::Validation(e.to_string()))?;
+    req.validate()
+        .map_err(|e| AppError::Validation(e.to_string()))?;
 
     let titipers_id = claims.user_id()?;
-    let order_id   = Uuid::new_v4();
+    let order_id = Uuid::new_v4();
 
     let product = fetch_product(req.product_id).await?;
     let jastiper_id: Uuid =
@@ -246,7 +242,7 @@ pub async fn checkout(
         ));
     }
 
-    let unit_price  = product["price"].as_i64().unwrap_or(0);
+    let unit_price = product["price"].as_i64().unwrap_or(0);
     let service_fee = product["service_fee"].as_i64().unwrap_or(0);
     let total_price = (unit_price + service_fee) * req.quantity as i64;
 
@@ -273,7 +269,7 @@ pub async fn checkout(
 
     // 3. Simpan ke DB — rollback stok + refund wallet jika gagal
     let product_id = req.product_id;
-    let quantity   = req.quantity;
+    let quantity = req.quantity;
     match repo::create(
         &pool,
         titipers_id,
@@ -285,7 +281,7 @@ pub async fn checkout(
         service_fee,
         total_price,
     )
-        .await
+    .await
     {
         Ok(order) => Ok((
             StatusCode::CREATED,
@@ -319,7 +315,9 @@ pub async fn get_order(
 ) -> Result<Json<serde_json::Value>, AppError> {
     let requester_id = claims.user_id()?;
     let order = fetch_order_with_access_check(&pool, order_id, requester_id).await?;
-    Ok(Json(json!({ "success": true, "message": "OK", "data": order })))
+    Ok(Json(
+        json!({ "success": true, "message": "OK", "data": order }),
+    ))
 }
 
 /// GET /orders/{order_id}/history
@@ -343,7 +341,9 @@ pub async fn get_order_history(
     fetch_order_with_access_check(&pool, order_id, requester_id).await?;
 
     let history = repo::get_status_history(&pool, order_id).await?;
-    Ok(Json(json!({ "success": true, "message": "Riwayat status ditemukan", "data": history })))
+    Ok(Json(
+        json!({ "success": true, "message": "Riwayat status ditemukan", "data": history }),
+    ))
 }
 
 /// PATCH /orders/{order_id}/status
@@ -410,7 +410,7 @@ pub async fn update_status(
         req.tracking_number.as_deref(),
         req.courier.as_deref(),
     )
-        .await?;
+    .await?;
 
     Ok(Json(json!({
         "success": true,
@@ -440,7 +440,8 @@ pub async fn cancel_order(
     Path(order_id): Path<Uuid>,
     Json(req): Json<CancelRequest>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    req.validate().map_err(|e| AppError::Validation(e.to_string()))?;
+    req.validate()
+        .map_err(|e| AppError::Validation(e.to_string()))?;
 
     let requester_id = claims.user_id()?;
     let role = &claims.role;
@@ -488,17 +489,22 @@ pub async fn cancel_order(
         actor_role,
         req.notes.as_deref(),
     )
-        .await?;
+    .await?;
 
     // Kompensasi: kembalikan stok
-    let product_id: Uuid =
-        serde_json::from_value(updated.product_snapshot["product_id"].clone())
-            .unwrap_or(updated.product_id);
+    let product_id: Uuid = serde_json::from_value(updated.product_snapshot["product_id"].clone())
+        .unwrap_or(updated.product_id);
     let _ = release_stock(product_id, order_id, updated.quantity).await;
 
     // Kompensasi: refund saldo ke titipers
     let refund_desc = format!("Refund Order #{} - pesanan dibatalkan", order_id);
-    let _ = refund_wallet(updated.titipers_id, order_id, updated.total_price, &refund_desc).await;
+    let _ = refund_wallet(
+        updated.titipers_id,
+        order_id,
+        updated.total_price,
+        &refund_desc,
+    )
+    .await;
 
     Ok(Json(json!({
         "success": true,
@@ -527,11 +533,17 @@ pub async fn my_purchases(
     Query(params): Query<PaginationParams>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let titipers_id = claims.user_id()?;
-    let filter = Some(OrderFilter { titipers_id: Some(titipers_id), ..Default::default() });
+    let filter = Some(OrderFilter {
+        titipers_id: Some(titipers_id),
+        ..Default::default()
+    });
     let (orders, total_count) = repo::find_all(&pool, filter, params.page, params.limit).await?;
     Ok(Json(paginated_response(
         "Riwayat belanja ditemukan",
-        orders, total_count, params.page, params.limit,
+        orders,
+        total_count,
+        params.page,
+        params.limit,
     )))
 }
 
@@ -555,10 +567,16 @@ pub async fn my_sales(
     Query(params): Query<PaginationParams>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let jastiper_id = claims.user_id()?;
-    let filter = Some(OrderFilter { jastiper_id: Some(jastiper_id), ..Default::default() });
+    let filter = Some(OrderFilter {
+        jastiper_id: Some(jastiper_id),
+        ..Default::default()
+    });
     let (orders, total_count) = repo::find_all(&pool, filter, params.page, params.limit).await?;
     Ok(Json(paginated_response(
         "Daftar pesanan masuk ditemukan",
-        orders, total_count, params.page, params.limit,
+        orders,
+        total_count,
+        params.page,
+        params.limit,
     )))
 }

@@ -95,16 +95,14 @@ async fn setup_mocks() -> (MockServer, MockServer) {
 
 // ─── Helper: buat order langsung via repo ─────────────────────────────────────
 
-async fn create_test_order(
-    pool: &std::sync::Arc<sqlx::PgPool>,
-) -> crate::models::order::Order {
+async fn create_test_order(pool: &std::sync::Arc<sqlx::PgPool>) -> crate::models::order::Order {
     let req: crate::models::order::CreateOrderRequest = serde_json::from_value(json!({
         "product_id": "550e8400-e29b-41d4-a716-446655440000",
         "quantity": 1,
         "shipping_address": shipping_address_json(),
         "note_to_jastiper": null
     }))
-        .unwrap();
+    .unwrap();
 
     crate::repositories::order::create(
         pool,
@@ -117,8 +115,8 @@ async fn create_test_order(
         10000i64,
         110000i64,
     )
-        .await
-        .expect("Gagal membuat order untuk test")
+    .await
+    .expect("Gagal membuat order untuk test")
 }
 
 async fn cleanup_order(pool: &sqlx::PgPool, order_id: uuid::Uuid) {
@@ -185,10 +183,9 @@ async fn test_repo_find_all_dengan_filter_titipers() {
         titipers_id: Some(order.titipers_id),
         ..Default::default()
     });
-    let (orders, total) =
-        crate::repositories::order::find_all(&pool, filter, Some(1), Some(20))
-            .await
-            .expect("find_all gagal");
+    let (orders, total) = crate::repositories::order::find_all(&pool, filter, Some(1), Some(20))
+        .await
+        .expect("find_all gagal");
 
     assert!(total >= 1);
     assert!(orders.iter().any(|o| o.order_id == order.order_id));
@@ -208,10 +205,9 @@ async fn test_repo_find_all_dengan_filter_jastiper() {
         jastiper_id: Some(order.jastiper_id),
         ..Default::default()
     });
-    let (orders, total) =
-        crate::repositories::order::find_all(&pool, filter, None, None)
-            .await
-            .expect("find_all gagal");
+    let (orders, total) = crate::repositories::order::find_all(&pool, filter, None, None)
+        .await
+        .expect("find_all gagal");
 
     assert!(total >= 1);
     assert!(orders.iter().any(|o| o.order_id == order.order_id));
@@ -227,10 +223,9 @@ async fn test_repo_find_all_tanpa_filter() {
 
     let order = create_test_order(&pool).await;
 
-    let (orders, total) =
-        crate::repositories::order::find_all(&pool, None, Some(1), Some(10))
-            .await
-            .expect("find_all tanpa filter gagal");
+    let (orders, total) = crate::repositories::order::find_all(&pool, None, Some(1), Some(10))
+        .await
+        .expect("find_all tanpa filter gagal");
 
     assert!(total >= 1);
     assert!(!orders.is_empty());
@@ -276,8 +271,8 @@ async fn test_repo_update_status_valid_transition() {
         None,
         None,
     )
-        .await
-        .expect("update_status gagal");
+    .await
+    .expect("update_status gagal");
 
     assert_eq!(updated.status, crate::models::order::OrderStatus::Purchased);
 
@@ -308,8 +303,8 @@ async fn test_repo_update_status_dengan_tracking() {
         None,
         None,
     )
-        .await
-        .unwrap();
+    .await
+    .unwrap();
 
     // PURCHASED → SHIPPED dengan tracking
     let updated = crate::repositories::order::update_status(
@@ -322,8 +317,8 @@ async fn test_repo_update_status_dengan_tracking() {
         Some("JNE-12345"),
         Some("JNE"),
     )
-        .await
-        .expect("update ke SHIPPED gagal");
+    .await
+    .expect("update ke SHIPPED gagal");
 
     assert_eq!(updated.status, crate::models::order::OrderStatus::Shipped);
     assert_eq!(updated.tracking_number.as_deref(), Some("JNE-12345"));
@@ -345,10 +340,17 @@ async fn test_repo_update_status_ke_completed_set_completed_at() {
         (crate::models::order::OrderStatus::Shipped, "JASTIPER"),
     ] {
         crate::repositories::order::update_status(
-            &pool, order.order_id, &status, "actor", role, None, None, None,
+            &pool,
+            order.order_id,
+            &status,
+            "actor",
+            role,
+            None,
+            None,
+            None,
         )
-            .await
-            .unwrap();
+        .await
+        .unwrap();
     }
 
     let completed = crate::repositories::order::update_status(
@@ -361,10 +363,13 @@ async fn test_repo_update_status_ke_completed_set_completed_at() {
         None,
         None,
     )
-        .await
-        .expect("update ke COMPLETED gagal");
+    .await
+    .expect("update ke COMPLETED gagal");
 
-    assert_eq!(completed.status, crate::models::order::OrderStatus::Completed);
+    assert_eq!(
+        completed.status,
+        crate::models::order::OrderStatus::Completed
+    );
     assert!(completed.completed_at.is_some());
 
     cleanup_order(&pool, order.order_id).await;
@@ -389,7 +394,7 @@ async fn test_repo_update_status_invalid_transition() {
         None,
         None,
     )
-        .await;
+    .await;
 
     assert!(result.is_err());
     assert!(matches!(
@@ -416,7 +421,7 @@ async fn test_repo_update_status_order_tidak_ada() {
         None,
         None,
     )
-        .await;
+    .await;
 
     assert!(result.is_err());
     assert!(matches!(
@@ -442,14 +447,14 @@ async fn test_repo_cancel_order() {
         "JASTIPER",
         Some("Dibatalkan oleh jastiper"),
     )
-        .await
-        .expect("cancel_order gagal");
+    .await
+    .expect("cancel_order gagal");
 
-    assert_eq!(cancelled.status, crate::models::order::OrderStatus::Cancelled);
     assert_eq!(
-        cancelled.cancellation_reason.as_deref(),
-        Some("OTHER")
+        cancelled.status,
+        crate::models::order::OrderStatus::Cancelled
     );
+    assert_eq!(cancelled.cancellation_reason.as_deref(), Some("OTHER"));
 
     let history = crate::repositories::order::get_status_history(&pool, order.order_id)
         .await
@@ -474,7 +479,7 @@ async fn test_repo_cancel_order_tidak_ada() {
         "ADMIN",
         None,
     )
-        .await;
+    .await;
 
     assert!(result.is_err());
     assert!(matches!(
@@ -501,8 +506,8 @@ async fn test_repo_cancel_order_dari_terminal_state() {
         "ADMIN",
         None,
     )
-        .await
-        .unwrap();
+    .await
+    .unwrap();
 
     // Cancel kedua dari CANCELLED → harus gagal (terminal state)
     let result = crate::repositories::order::cancel_order(
@@ -514,7 +519,7 @@ async fn test_repo_cancel_order_dari_terminal_state() {
         "ADMIN",
         None,
     )
-        .await;
+    .await;
 
     assert!(result.is_err());
     assert!(matches!(
@@ -547,7 +552,7 @@ async fn test_checkout_success() {
         "shipping_address": shipping_address_json(),
         "note_to_jastiper": null
     }))
-        .unwrap();
+    .unwrap();
 
     let order = crate::repositories::order::create(
         &pool,
@@ -560,7 +565,7 @@ async fn test_checkout_success() {
         10000i64,
         110000i64,
     )
-        .await;
+    .await;
 
     assert!(order.is_ok(), "Order harus berhasil: {:?}", order.err());
     let order = order.unwrap();
@@ -617,7 +622,7 @@ async fn test_checkout_saldo_tidak_cukup() {
         110000i64,
         "Pembayaran test",
     )
-        .await;
+    .await;
 
     assert!(result.is_err());
     assert!(matches!(
@@ -822,7 +827,7 @@ async fn test_deduct_wallet_success() {
         50000,
         "Test",
     )
-        .await;
+    .await;
     assert!(result.is_ok());
 }
 
@@ -846,7 +851,7 @@ async fn test_deduct_wallet_user_tidak_ditemukan() {
         50000,
         "Test",
     )
-        .await;
+    .await;
     assert!(matches!(
         result.unwrap_err(),
         crate::error::AppError::NotFound(_)
@@ -874,7 +879,7 @@ async fn test_deduct_wallet_idempotent_409() {
         50000,
         "Test",
     )
-        .await;
+    .await;
     assert!(result.is_ok());
 }
 
@@ -898,7 +903,7 @@ async fn test_deduct_wallet_server_error() {
         50000,
         "Test",
     )
-        .await;
+    .await;
     assert!(matches!(
         result.unwrap_err(),
         crate::error::AppError::Internal
@@ -925,7 +930,7 @@ async fn test_refund_wallet_success() {
         50000,
         "Refund test",
     )
-        .await;
+    .await;
     assert!(result.is_ok());
 }
 
@@ -949,7 +954,7 @@ async fn test_refund_wallet_idempotent_409() {
         50000,
         "Refund test",
     )
-        .await;
+    .await;
     assert!(result.is_ok());
 }
 
@@ -973,7 +978,7 @@ async fn test_refund_wallet_server_error() {
         50000,
         "Refund test",
     )
-        .await;
+    .await;
     assert!(matches!(
         result.unwrap_err(),
         crate::error::AppError::Internal
@@ -1007,8 +1012,7 @@ async fn test_fetch_product_success() {
         std::env::set_var("INVENTORY_SERVICE_URL", inventory_server.uri());
     }
 
-    let result =
-        crate::handlers::order::fetch_product(uuid::Uuid::new_v4()).await;
+    let result = crate::handlers::order::fetch_product(uuid::Uuid::new_v4()).await;
     assert!(result.is_ok());
     let data = result.unwrap();
     assert_eq!(data["name"], "Tas Korea");
@@ -1100,7 +1104,7 @@ fn test_state_machine_invalid_transitions() {
     assert!(!Paid.can_transition_to(&Completed));
     assert!(!Shipped.can_transition_to(&Pending));
     assert!(!Completed.can_transition_to(&Cancelled)); // terminal
-    assert!(!Cancelled.can_transition_to(&Paid));      // terminal
+    assert!(!Cancelled.can_transition_to(&Paid)); // terminal
 }
 
 #[test]
@@ -1117,8 +1121,8 @@ fn test_state_machine_terminal_states_kosong() {
 
 #[test]
 fn test_error_into_response_semua_variant() {
-    use axum::response::IntoResponse;
     use crate::error::AppError;
+    use axum::response::IntoResponse;
 
     let cases: Vec<(AppError, u16)> = vec![
         (AppError::Validation("invalid".to_string()), 400),
@@ -1126,7 +1130,10 @@ fn test_error_into_response_semua_variant() {
         (AppError::Forbidden("forbidden".to_string()), 403),
         (AppError::NotFound("not found".to_string()), 404),
         (AppError::Conflict("conflict".to_string()), 409),
-        (AppError::UnprocessableEntity("unprocessable".to_string()), 422),
+        (
+            AppError::UnprocessableEntity("unprocessable".to_string()),
+            422,
+        ),
         (
             AppError::InvalidStatusTransition {
                 current: "PAID".to_string(),
@@ -1151,8 +1158,8 @@ fn test_error_into_response_semua_variant() {
 
 #[test]
 fn test_error_database_into_response() {
-    use axum::response::IntoResponse;
     use crate::error::AppError;
+    use axum::response::IntoResponse;
 
     // Simulasi sqlx::Error melalui AppError::Database
     let sqlx_err = sqlx::Error::RowNotFound;
@@ -1205,14 +1212,12 @@ fn test_jwt_claims_user_id_invalid_uuid() {
 
 #[tokio::test]
 async fn test_jwt_from_request_parts_tanpa_header() {
-    use axum::extract::FromRequestParts;
     use crate::middleware::auth::JwtClaims;
+    use axum::extract::FromRequestParts;
 
     use axum::http::Request;
 
-    let request = Request::builder()
-        .body(())
-        .unwrap();
+    let request = Request::builder().body(()).unwrap();
     let (mut parts, _) = request.into_parts();
     let result = JwtClaims::from_request_parts(&mut parts, &()).await;
     assert!(result.is_err());
@@ -1224,14 +1229,12 @@ async fn test_jwt_from_request_parts_tanpa_header() {
 
 #[tokio::test]
 async fn test_jwt_from_request_parts_format_salah() {
-    use axum::extract::FromRequestParts;
     use crate::middleware::auth::JwtClaims;
+    use axum::extract::FromRequestParts;
 
     use axum::http::Request;
 
-    let request = Request::builder()
-        .body(())
-        .unwrap();
+    let request = Request::builder().body(()).unwrap();
     let (mut parts, _) = request.into_parts();
     parts.headers.insert(
         axum::http::header::AUTHORIZATION,
@@ -1248,8 +1251,8 @@ async fn test_jwt_from_request_parts_format_salah() {
 
 #[tokio::test]
 async fn test_jwt_from_request_parts_token_invalid() {
-    use axum::extract::FromRequestParts;
     use crate::middleware::auth::JwtClaims;
+    use axum::extract::FromRequestParts;
 
     unsafe {
         std::env::set_var("JWT_SECRET", "test-secret");
@@ -1257,9 +1260,7 @@ async fn test_jwt_from_request_parts_token_invalid() {
 
     use axum::http::Request;
 
-    let request = Request::builder()
-        .body(())
-        .unwrap();
+    let request = Request::builder().body(()).unwrap();
     let (mut parts, _) = request.into_parts();
     parts.headers.insert(
         axum::http::header::AUTHORIZATION,
@@ -1276,8 +1277,8 @@ async fn test_jwt_from_request_parts_token_invalid() {
 
 #[tokio::test]
 async fn test_jwt_from_request_parts_token_valid() {
-    use axum::extract::FromRequestParts;
     use crate::middleware::auth::JwtClaims;
+    use axum::extract::FromRequestParts;
     use jsonwebtoken::{EncodingKey, Header, encode};
 
     let secret = "test-secret-jwt";
@@ -1299,14 +1300,12 @@ async fn test_jwt_from_request_parts_token_valid() {
         &claims,
         &EncodingKey::from_secret(secret.as_bytes()),
     )
-        .expect("Gagal encode JWT");
+    .expect("Gagal encode JWT");
 
     let bearer = format!("Bearer {}", token);
     use axum::http::Request;
 
-    let request = Request::builder()
-        .body(())
-        .unwrap();
+    let request = Request::builder().body(()).unwrap();
     let (mut parts, _) = request.into_parts();
     parts.headers.insert(
         axum::http::header::AUTHORIZATION,

@@ -119,7 +119,6 @@ pub async fn find_by_id(pool: &PgPool, order_id: Uuid) -> Result<Option<Order>> 
     Ok(order)
 }
 
-
 pub async fn insert_status_history(
     pool: &PgPool,
     order_id: Uuid,
@@ -136,15 +135,15 @@ pub async fn insert_status_history(
            (statushis_id, order_id, status, changed_by, actor_role, notes, timestamp)
            VALUES ($1, $2, $3, $4, $5, $6, $7)"#,
     )
-        .bind(statushis_id)
-        .bind(order_id)
-        .bind(status)
-        .bind(changed_by)
-        .bind(actor_role)
-        .bind(notes.unwrap_or(""))
-        .bind(now)
-        .execute(pool)
-        .await?;
+    .bind(statushis_id)
+    .bind(order_id)
+    .bind(status)
+    .bind(changed_by)
+    .bind(actor_role)
+    .bind(notes.unwrap_or(""))
+    .bind(now)
+    .execute(pool)
+    .await?;
 
     Ok(())
 }
@@ -202,7 +201,6 @@ pub async fn create(
 
     sqlx::query_with(&sql, values).execute(pool).await?;
 
-    
     insert_status_history(
         pool,
         order_id,
@@ -211,11 +209,10 @@ pub async fn create(
         "TITIPERS",
         Some("Pesanan berhasil dibuat dan pembayaran diterima"),
     )
-        .await?;
+    .await?;
 
     find_by_id(pool, order_id).await?.ok_or(AppError::Internal)
 }
-
 
 pub async fn update_status(
     pool: &PgPool,
@@ -229,7 +226,6 @@ pub async fn update_status(
 ) -> Result<Order> {
     let now = Utc::now();
 
-    
     let order = find_by_id(pool, order_id)
         .await?
         .ok_or_else(|| AppError::NotFound("Pesanan tidak ditemukan".to_string()))?;
@@ -251,14 +247,12 @@ pub async fn update_status(
     let status_str = format!("{:?}", new_status).to_uppercase();
     let status_cust = format!("'{}'::order_status", status_str);
 
-    
     let completed_at_sql = if *new_status == OrderStatus::Completed {
         format!(", completed_at = '{}'", now.to_rfc3339())
     } else {
         String::new()
     };
 
-    
     let tracking_sql = match (tracking_number, courier) {
         (Some(tn), Some(c)) => format!(
             ", tracking_number = '{}', courier = '{}'",
@@ -280,12 +274,10 @@ pub async fn update_status(
         .execute(pool)
         .await?;
 
-    
     insert_status_history(pool, order_id, &status_str, changed_by, actor_role, notes).await?;
 
     find_by_id(pool, order_id).await?.ok_or(AppError::Internal)
 }
-
 
 pub async fn cancel_order(
     pool: &PgPool,
@@ -323,26 +315,17 @@ pub async fn cancel_order(
            updated_at = $3
        WHERE order_id = $4"#,
     )
-        .bind(cancellation_reason)
-        .bind(cancelled_by_str)
-        .bind(now)
-        .bind(order_id)
-        .execute(pool)
-        .await?;
+    .bind(cancellation_reason)
+    .bind(cancelled_by_str)
+    .bind(now)
+    .bind(order_id)
+    .execute(pool)
+    .await?;
 
-    insert_status_history(
-        pool,
-        order_id,
-        "CANCELLED",
-        changed_by,
-        actor_role,
-        notes,
-    )
-        .await?;
+    insert_status_history(pool, order_id, "CANCELLED", changed_by, actor_role, notes).await?;
 
     find_by_id(pool, order_id).await?.ok_or(AppError::Internal)
 }
-
 
 pub async fn get_status_history(
     pool: &PgPool,
@@ -354,9 +337,9 @@ pub async fn get_status_history(
            WHERE order_id = $1
            ORDER BY timestamp ASC"#,
     )
-        .bind(order_id)
-        .fetch_all(pool)
-        .await?;
+    .bind(order_id)
+    .fetch_all(pool)
+    .await?;
 
     Ok(rows)
 }

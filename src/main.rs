@@ -58,9 +58,18 @@ async fn main() {
         .route("/orders/my/purchases", get(handlers::order::my_purchases))
         .route("/orders/my/sales", get(handlers::order::my_sales))
         .route("/orders/{order_id}", get(handlers::order::get_order))
-        .route("/orders/{order_id}/history", get(handlers::order::get_order_history))
-        .route("/orders/{order_id}/status", patch(handlers::order::update_status))
-        .route("/orders/{order_id}/cancel", post(handlers::order::cancel_order))
+        .route(
+            "/orders/{order_id}/history",
+            get(handlers::order::get_order_history),
+        )
+        .route(
+            "/orders/{order_id}/status",
+            patch(handlers::order::update_status),
+        )
+        .route(
+            "/orders/{order_id}/cancel",
+            post(handlers::order::cancel_order),
+        )
         .with_state(shared_pool);
 
     let app: Router = Router::new()
