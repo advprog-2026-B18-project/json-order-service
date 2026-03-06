@@ -107,14 +107,28 @@ async fn setup_mocks() -> (MockServer, MockServer) {
     (inventory_server, wallet_server)
 }
 
-/// Setup mock wallet dengan body JSON.
-async fn mock_wallet_with_body(path_str: &str, status: u16, body: serde_json::Value) -> MockServer {
+/// Helper generik: buat MockServer dengan satu route.
+/// `use_regex=true` → pakai path_regex, `false` → path exact.
+/// `body=Some(json)` → tambahkan body, `None` → response kosong.
+async fn setup_mock(
+    method_str: &str,
+    path_str: &'static str,
+    use_regex: bool,
+    status: u16,
+    body: Option<serde_json::Value>,
+) -> MockServer {
     let server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path(path_str))
-        .respond_with(ResponseTemplate::new(status).set_body_json(body))
-        .mount(&server)
-        .await;
+    let base = Mock::given(method(method_str));
+    let matched = if use_regex {
+        base.and(path_regex(path_str))
+    } else {
+        base.and(path(path_str))
+    };
+    let response = match body {
+        Some(b) => ResponseTemplate::new(status).set_body_json(b),
+        None => ResponseTemplate::new(status),
+    };
+    matched.respond_with(response).mount(&server).await;
     server
 }
 
@@ -647,13 +661,14 @@ async fn test_checkout_saldo_tidak_cukup() {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 async fn setup_reserve_mock(status: u16) -> MockServer {
-    let server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path_regex("/internal/products/.*/stock/reserve"))
-        .respond_with(ResponseTemplate::new(status))
-        .mount(&server)
-        .await;
-    server
+    setup_mock(
+        "POST",
+        "/internal/products/.*/stock/reserve",
+        true,
+        status,
+        None,
+    )
+    .await
 }
 
 #[tokio::test]
@@ -706,24 +721,27 @@ async fn test_reserve_stock_server_error() {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 async fn setup_release_mock(status: u16) -> MockServer {
-    let server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path_regex("/internal/products/.*/stock/release"))
-        .respond_with(ResponseTemplate::new(status))
-        .mount(&server)
-        .await;
-    server
+    setup_mock(
+        "POST",
+        "/internal/products/.*/stock/release",
+        true,
+        status,
+        None,
+    )
+    .await
 }
 
 #[tokio::test]
 #[serial]
 async fn test_release_stock_success() {
-    let server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path_regex("/internal/products/.*/stock/release"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"status": "ok"})))
-        .mount(&server)
-        .await;
+    let server = setup_mock(
+        "POST",
+        "/internal/products/.*/stock/release",
+        true,
+        200,
+        Some(json!({"status": "ok"})),
+    )
+    .await;
     set_inventory_env(&server.uri());
 
     let result =
@@ -792,13 +810,7 @@ async fn test_release_stock_server_error() {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 async fn setup_deduct_mock(status: u16) -> MockServer {
-    let server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path("/internal/wallets/deduct"))
-        .respond_with(ResponseTemplate::new(status))
-        .mount(&server)
-        .await;
-    server
+    setup_mock("POST", "/internal/wallets/deduct", false, status, None).await
 }
 
 async fn call_deduct_wallet(uri: &str) -> Result<(), crate::error::AppError> {
@@ -810,8 +822,14 @@ async fn call_deduct_wallet(uri: &str) -> Result<(), crate::error::AppError> {
 #[tokio::test]
 #[serial]
 async fn test_deduct_wallet_success() {
-    let server =
-        mock_wallet_with_body("/internal/wallets/deduct", 200, json!({"status": "ok"})).await;
+    let server = setup_mock(
+        "POST",
+        "/internal/wallets/deduct",
+        false,
+        200,
+        Some(json!({"status": "ok"})),
+    )
+    .await;
     let result = call_deduct_wallet(&server.uri()).await;
     assert!(result.is_ok());
 }
@@ -852,13 +870,7 @@ async fn test_deduct_wallet_server_error() {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 async fn setup_refund_mock(status: u16) -> MockServer {
-    let server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path("/internal/wallets/refund"))
-        .respond_with(ResponseTemplate::new(status))
-        .mount(&server)
-        .await;
-    server
+    setup_mock("POST", "/internal/wallets/refund", false, status, None).await
 }
 
 async fn call_refund_wallet(uri: &str) -> Result<(), crate::error::AppError> {
@@ -875,8 +887,14 @@ async fn call_refund_wallet(uri: &str) -> Result<(), crate::error::AppError> {
 #[tokio::test]
 #[serial]
 async fn test_refund_wallet_success() {
-    let server =
-        mock_wallet_with_body("/internal/wallets/refund", 200, json!({"status": "ok"})).await;
+    let server = setup_mock(
+        "POST",
+        "/internal/wallets/refund",
+        false,
+        200,
+        Some(json!({"status": "ok"})),
+    )
+    .await;
     let result = call_refund_wallet(&server.uri()).await;
     assert!(result.is_ok());
 }
@@ -906,13 +924,7 @@ async fn test_refund_wallet_server_error() {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 async fn setup_fetch_product_mock(status: u16) -> MockServer {
-    let server = MockServer::start().await;
-    Mock::given(method("GET"))
-        .and(path_regex("/products/.*"))
-        .respond_with(ResponseTemplate::new(status))
-        .mount(&server)
-        .await;
-    server
+    setup_mock("GET", "/products/.*", true, status, None).await
 }
 
 #[tokio::test]
@@ -952,9 +964,7 @@ async fn test_fetch_product_success() {
 #[serial]
 async fn test_fetch_product_tidak_ditemukan() {
     let server = setup_fetch_product_mock(404).await;
-    unsafe {
-        std::env::set_var("INVENTORY_SERVICE_URL", server.uri());
-    }
+    set_inventory_env(&server.uri());
 
     let result = crate::handlers::order::fetch_product(uuid::Uuid::new_v4()).await;
     assert!(matches!(
@@ -967,9 +977,7 @@ async fn test_fetch_product_tidak_ditemukan() {
 #[serial]
 async fn test_fetch_product_tidak_aktif() {
     let server = setup_fetch_product_mock(422).await;
-    unsafe {
-        std::env::set_var("INVENTORY_SERVICE_URL", server.uri());
-    }
+    set_inventory_env(&server.uri());
 
     let result = crate::handlers::order::fetch_product(uuid::Uuid::new_v4()).await;
     assert!(matches!(
@@ -982,9 +990,7 @@ async fn test_fetch_product_tidak_aktif() {
 #[serial]
 async fn test_fetch_product_server_error() {
     let server = setup_fetch_product_mock(500).await;
-    unsafe {
-        std::env::set_var("INVENTORY_SERVICE_URL", server.uri());
-    }
+    set_inventory_env(&server.uri());
 
     let result = crate::handlers::order::fetch_product(uuid::Uuid::new_v4()).await;
     assert!(matches!(
