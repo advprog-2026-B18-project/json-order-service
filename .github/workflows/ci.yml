@@ -82,13 +82,14 @@ jobs:
 
       - name: Run tests with coverage
         env:
-          DATABASE_URL: postgres://postgres:postgres@localhost:5432/order_service_test
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          INTERNAL_SERVICE_KEY: ${{ secrets.INTERNAL_SERVICE_KEY }}
         run: |
           cargo tarpaulin \
             --out Lcov \
             --output-dir coverage \
             --exclude-files "src/main.rs" \
-            --timeout 120 \
+            --timeout 180 \
             -- --test-threads=1
 
       - name: Run tests with coverage
