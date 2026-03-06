@@ -168,7 +168,7 @@ pub(crate) async fn fetch_product(product_id: Uuid) -> Result<serde_json::Value,
 )]
 pub async fn checkout(
     State(pool): State<Arc<PgPool>>,
-    claims: JwtClaims,                     // ← ekstrak dari Bearer token
+    claims: JwtClaims, // ← ekstrak dari Bearer token
     Json(req): Json<CreateOrderRequest>,
 ) -> Result<(StatusCode, Json<serde_json::Value>), AppError> {
     req.validate()
@@ -224,11 +224,11 @@ pub async fn checkout(
         service_fee,
         total_price,
     )
-        .await
-        .map_err(|e| {
-            // TODO: async rollback (release stock + refund wallet) bisa dilakukan di sini
-            e
-        })?;
+    .await
+    .map_err(|e| {
+        // TODO: async rollback (release stock + refund wallet) bisa dilakukan di sini
+        e
+    })?;
 
     Ok((
         StatusCode::CREATED,
@@ -270,7 +270,9 @@ pub async fn get_order(
         ));
     }
 
-    Ok(Json(json!({"success": true, "message": "OK", "data": order})))
+    Ok(Json(
+        json!({"success": true, "message": "OK", "data": order}),
+    ))
 }
 
 // --- GET /orders/my/purchases ---
@@ -290,7 +292,7 @@ pub async fn get_order(
 )]
 pub async fn my_purchases(
     State(pool): State<Arc<PgPool>>,
-    claims: JwtClaims,                     
+    claims: JwtClaims,
     Query(params): Query<PaginationParams>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let titipers_id = claims.user_id()?;
@@ -332,7 +334,7 @@ pub async fn my_purchases(
 )]
 pub async fn my_sales(
     State(pool): State<Arc<PgPool>>,
-    claims: JwtClaims,                     
+    claims: JwtClaims,
     Query(params): Query<PaginationParams>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let jastiper_id = claims.user_id()?;
