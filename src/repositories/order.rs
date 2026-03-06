@@ -1,17 +1,13 @@
 use chrono::Utc;
-use sea_query::{Expr, Iden};
+use sea_query::Expr;
 use sea_query::{PostgresQueryBuilder, Query};
 use sea_query_binder::SqlxBinder;
-use serde_json::json;
 use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::{
     error::{AppError, Result},
-    models::order::{
-        CancelRequest, CancelledBy, CreateOrderRequest, Order, OrderFilter, OrderIden, OrderStatus,
-        PaginationParams, ProductSnapshot, UpdateStatusRequest,
-    },
+    models::order::{CreateOrderRequest, Order, OrderFilter, OrderIden},
 };
 
 pub async fn find_all(
@@ -120,16 +116,17 @@ pub async fn find_by_id(pool: &PgPool, order_id: Uuid) -> Result<Option<Order>> 
     Ok(order)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn create(
     pool: &PgPool,
     titipers_id: Uuid,
     jastiper_id: Uuid,
-    order_id: Uuid,
+    _order_id: Uuid,
     req: CreateOrderRequest,
-    product_snapshot: serde_json::Value, // ← snapshot diterima dari handler
-    unit_price: i32,
-    service_fee: i32,
-    total_price: i32,
+    product_snapshot: serde_json::Value,
+    unit_price: i64,
+    service_fee: i64,
+    total_price: i64,
 ) -> Result<Order> {
     let order_id = Uuid::new_v4();
     let now = Utc::now();
@@ -162,7 +159,7 @@ pub async fn create(
             unit_price.into(),  // ← dari parameter
             service_fee.into(), // ← dari parameter
             total_price.into(), // ← dari parameter
-            "PAID".into(),
+            sea_query::Expr::cust("'PAID'::order_status"),
             serde_json::to_value(req.shipping_address).unwrap().into(),
             req.note_to_jastiper.unwrap_or_default().into(),
             now.into(),
