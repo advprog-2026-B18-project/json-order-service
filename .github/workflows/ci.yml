@@ -58,6 +58,21 @@ jobs:
     runs-on: ubuntu-latest
     needs: lint
 
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: order_service_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     steps:
       - uses: actions/checkout@v4
 
@@ -74,16 +89,21 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-
 
-      - name: Install cargo-tarpaulin
-        run: cargo install cargo-tarpaulin
-
       - name: Install sqlx-cli
         run: cargo install sqlx-cli --no-default-features --features postgres
 
+      - name: Run migrations
+        env:
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/order_service_test
+        run: sqlx migrate run
+
+      - name: Install cargo-tarpaulin
+        run: cargo install cargo-tarpaulin
+
       - name: Run tests with coverage
         env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          INTERNAL_SERVICE_KEY: ${{ secrets.INTERNAL_SERVICE_KEY }}
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/order_service_test
+          INTERNAL_SERVICE_KEY: test-key
         run: |
           cargo tarpaulin \
             --out Lcov \
@@ -91,25 +111,6 @@ jobs:
             --exclude-files "src/main.rs" \
             --timeout 180 \
             -- --test-threads=1
-
-      - name: Run tests with coverage
-        env:
-          DATABASE_URL: postgres://postgres:postgres@localhost:5432/order_service_test
-        run: |
-          cargo tarpaulin \
-            --out Lcov \
-            --output-dir coverage \
-            --exclude-files "src/main.rs" \
-            --timeout 120 \
-            -- --test-threads=1
-
-      - name: Upload coverage report
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-report
-          path: |
-            coverage/cobertura.xml
-            coverage/lcov.info
 
   # ─────────────────────────────────────────────
   # 3. SONARCLOUD — Static analysis
