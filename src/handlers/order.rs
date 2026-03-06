@@ -1,4 +1,5 @@
 use crate::error::AppError;
+use crate::middleware::auth::JwtClaims;
 use crate::models::order::{CreateOrderRequest, OrderFilter, PaginationParams};
 use crate::repositories::order as repo;
 use axum::Json;
@@ -80,7 +81,6 @@ pub(crate) async fn release_stock(
 
     match response.status().as_u16() {
         200 => Ok(()),
-        // 404 bisa dihapus
         404 => Err(AppError::NotFound("Produk tidak ditemukan".to_string())),
         409 => Err(AppError::Conflict("Stok tidak mencukupi".to_string())),
         422 => Err(AppError::UnprocessableEntity(
@@ -130,7 +130,7 @@ pub(crate) async fn deduct_wallet(
 
 pub(crate) async fn fetch_product(product_id: Uuid) -> Result<serde_json::Value, AppError> {
     let inventory_url = std::env::var("INVENTORY_SERVICE_URL")
-        .unwrap_or_else(|_| "http://localhost:8083".to_string()); // port inventory
+        .unwrap_or_else(|_| "http://localhost:8083".to_string());
 
     let client = reqwest::Client::new();
     let response = client
@@ -152,6 +152,7 @@ pub(crate) async fn fetch_product(product_id: Uuid) -> Result<serde_json::Value,
     }
 }
 
+// --- POST /orders ---
 #[utoipa::path(
     post, path = "/orders",
     tag = "Orders",
@@ -159,6 +160,7 @@ pub(crate) async fn fetch_product(product_id: Uuid) -> Result<serde_json::Value,
     responses(
         (status=201, description="Pesanan berhasil dibuat", body=Order),
         (status=400, description="Data tidak valid"),
+        (status=401, description="Token tidak valid atau tidak ada"),
         (status=403, description="Jastiper mencoba beli produk sendiri"),
         (status=409, description="Stok tidak mencukupi"),
         (status=422, description="Saldo tidak cukup / produk tidak aktif"),
@@ -166,18 +168,28 @@ pub(crate) async fn fetch_product(product_id: Uuid) -> Result<serde_json::Value,
 )]
 pub async fn checkout(
     State(pool): State<Arc<PgPool>>,
+    claims: JwtClaims,                     // ← ekstrak dari Bearer token
     Json(req): Json<CreateOrderRequest>,
 ) -> Result<(StatusCode, Json<serde_json::Value>), AppError> {
     req.validate()
         .map_err(|e| AppError::Validation(e.to_string()))?;
 
-    let titipers_id = Uuid::new_v4(); // placeholder JWT
+    // Identitas titipers dari JWT (sub = accountId)
+    let titipers_id = claims.user_id()?;
     let order_id = Uuid::new_v4();
 
     let product = fetch_product(req.product_id).await?;
 
     let jastiper_id: Uuid =
         serde_json::from_value(product["jastiper_id"].clone()).map_err(|_| AppError::Internal)?;
+
+    // Titipers tidak boleh membeli produknya sendiri
+    if titipers_id == jastiper_id {
+        return Err(AppError::Forbidden(
+            "Jastiper tidak dapat membeli produk milik sendiri".to_string(),
+        ));
+    }
+
     let unit_price = product["price"].as_i64().unwrap_or(0);
     let service_fee = product["service_fee"].as_i64().unwrap_or(0);
     let total_price = (unit_price + service_fee) * req.quantity as i64;
@@ -212,18 +224,11 @@ pub async fn checkout(
         service_fee,
         total_price,
     )
-    .await?;
-
-    // TODO
-    // ).await {
-    //     Ok(order) => order,
-    //     Err(e) => {
-    //     // Rollback: release stok dan refund saldo
-    //     let _ = release_stock(req.product_id, order_id, req.quantity).await;
-    //     let _ = refund_wallet(titipers_id, order_id, total_price as i64).await;
-    //     return Err(e);
-    //     }
-    // };
+        .await
+        .map_err(|e| {
+            // TODO: async rollback (release stock + refund wallet) bisa dilakukan di sini
+            e
+        })?;
 
     Ok((
         StatusCode::CREATED,
@@ -242,16 +247,30 @@ pub async fn checkout(
     params(("order_id" = Uuid, Path, description = "ID unik pesanan")),
     responses(
         (status=200, description="Data pesanan ditemukan", body=Order),
+        (status=401, description="Token tidak valid atau tidak ada"),
         (status=403, description="Bukan pesanan milik user ini"),
         (status=404, description="Pesanan tidak ditemukan"),
     )
 )]
 pub async fn get_order(
     State(pool): State<Arc<PgPool>>,
+    claims: JwtClaims,
     Path(order_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let order = repo::find_by_id(&pool, order_id).await?;
-    Ok(Json(json!({"success":true,"message":"OK","data":order})))
+    let requester_id = claims.user_id()?;
+
+    let order = repo::find_by_id(&pool, order_id)
+        .await?
+        .ok_or_else(|| AppError::NotFound("Pesanan tidak ditemukan".to_string()))?;
+
+    // Hanya titipers atau jastiper yang terlibat yang boleh melihat
+    if order.titipers_id != requester_id && order.jastiper_id != requester_id {
+        return Err(AppError::Forbidden(
+            "Anda tidak memiliki akses ke pesanan ini".to_string(),
+        ));
+    }
+
+    Ok(Json(json!({"success": true, "message": "OK", "data": order})))
 }
 
 // --- GET /orders/my/purchases ---
@@ -265,14 +284,16 @@ pub async fn get_order(
     ),
     responses(
         (status = 200, description = "Berhasil", body = serde_json::Value),
+        (status = 401, description = "Token tidak valid atau tidak ada"),
         (status = 500, description = "Internal server error")
     )
 )]
 pub async fn my_purchases(
     State(pool): State<Arc<PgPool>>,
+    claims: JwtClaims,                     
     Query(params): Query<PaginationParams>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let titipers_id = Uuid::new_v4(); // Nanti ganti dengan ID dari JWT
+    let titipers_id = claims.user_id()?;
 
     let filter = Some(OrderFilter {
         titipers_id: Some(titipers_id),
@@ -305,14 +326,16 @@ pub async fn my_purchases(
     ),
     responses(
         (status = 200, description = "Berhasil", body = serde_json::Value),
+        (status = 401, description = "Token tidak valid atau tidak ada"),
         (status = 500, description = "Internal server error")
     )
 )]
 pub async fn my_sales(
     State(pool): State<Arc<PgPool>>,
+    claims: JwtClaims,                     
     Query(params): Query<PaginationParams>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let jastiper_id = Uuid::new_v4();
+    let jastiper_id = claims.user_id()?;
 
     let filter = Some(OrderFilter {
         jastiper_id: Some(jastiper_id),
@@ -328,7 +351,8 @@ pub async fn my_sales(
         "pagination": {
             "total_items": total_count,
             "page": params.page.unwrap_or(1),
-            "limit": params.limit.unwrap_or(20)
+            "limit": params.limit.unwrap_or(20),
+            "total_pages": (total_count as f64 / params.limit.unwrap_or(20) as f64).ceil() as i64
         }
     })))
 }
