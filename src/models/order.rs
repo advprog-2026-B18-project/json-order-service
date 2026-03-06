@@ -198,8 +198,9 @@ pub struct Order {
     /// Diisi saat status SHIPPED
     pub courier: Option<String>,
     pub cancellation_reason: Option<String>,
-    /// Menggunakan Option<CancelledBy> agar type-safe, tidak lagi raw String
-    pub cancelled_by: Option<CancelledBy>,
+    /// Raw string dari DB (kolom bertipe TEXT, bukan cancelled_by_enum)
+    /// Gunakan `.parse::<CancelledBy>()` bila perlu konversi ke enum
+    pub cancelled_by: Option<String>,
     pub completed_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
