@@ -3,7 +3,9 @@ use serial_test::serial;
 use wiremock::matchers::{method, path, path_regex};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════════
+// HELPERS — Pool
+// ═══════════════════════════════════════════════════════════════════════════════
 
 async fn make_pool() -> sqlx::PgPool {
     dotenvy::dotenv().ok();
@@ -15,6 +17,14 @@ async fn make_pool() -> sqlx::PgPool {
         .await
         .expect("Gagal koneksi ke DB")
 }
+
+async fn make_arc_pool() -> std::sync::Arc<sqlx::PgPool> {
+    std::sync::Arc::new(make_pool().await)
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// HELPERS — Fixture JSON
+// ═══════════════════════════════════════════════════════════════════════════════
 
 fn shipping_address_json() -> serde_json::Value {
     json!({
@@ -42,6 +52,10 @@ fn product_snapshot_json() -> serde_json::Value {
         "service_fee": 10000,
     })
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// HELPERS — Mock Servers
+// ═══════════════════════════════════════════════════════════════════════════════
 
 async fn setup_mocks() -> (MockServer, MockServer) {
     let inventory_server = MockServer::start().await;
@@ -93,7 +107,46 @@ async fn setup_mocks() -> (MockServer, MockServer) {
     (inventory_server, wallet_server)
 }
 
-// ─── Helper: buat order langsung via repo ─────────────────────────────────────
+/// Setup mock inventory server dengan satu response untuk path dan status tertentu.
+async fn mock_inventory(method_str: &str, path_str: &str, status: u16) -> MockServer {
+    let server = MockServer::start().await;
+    let matcher = Mock::given(method(method_str));
+    let mock = if path_str.contains(".*") {
+        matcher.and(path_regex(path_str))
+    } else {
+        matcher.and(path(path_str))
+    };
+    mock.respond_with(ResponseTemplate::new(status))
+        .mount(&server)
+        .await;
+    server
+}
+
+/// Setup mock wallet server dengan satu response untuk path dan status tertentu.
+async fn mock_wallet(path_str: &str, status: u16) -> MockServer {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path(path_str))
+        .respond_with(ResponseTemplate::new(status))
+        .mount(&server)
+        .await;
+    server
+}
+
+/// Setup mock wallet dengan body JSON.
+async fn mock_wallet_with_body(path_str: &str, status: u16, body: serde_json::Value) -> MockServer {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path(path_str))
+        .respond_with(ResponseTemplate::new(status).set_body_json(body))
+        .mount(&server)
+        .await;
+    server
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// HELPERS — Order fixture & cleanup
+// ═══════════════════════════════════════════════════════════════════════════════
 
 async fn create_test_order(pool: &std::sync::Arc<sqlx::PgPool>) -> crate::models::order::Order {
     let req: crate::models::order::CreateOrderRequest = serde_json::from_value(json!({
@@ -102,7 +155,7 @@ async fn create_test_order(pool: &std::sync::Arc<sqlx::PgPool>) -> crate::models
         "shipping_address": shipping_address_json(),
         "note_to_jastiper": null
     }))
-    .unwrap();
+        .unwrap();
 
     crate::repositories::order::create(
         pool,
@@ -115,8 +168,8 @@ async fn create_test_order(pool: &std::sync::Arc<sqlx::PgPool>) -> crate::models
         10000i64,
         110000i64,
     )
-    .await
-    .expect("Gagal membuat order untuk test")
+        .await
+        .expect("Gagal membuat order untuk test")
 }
 
 async fn cleanup_order(pool: &sqlx::PgPool, order_id: uuid::Uuid) {
@@ -132,16 +185,37 @@ async fn cleanup_order(pool: &sqlx::PgPool, order_id: uuid::Uuid) {
         .ok();
 }
 
+/// Helper untuk set env vars yang digunakan oleh inventory + wallet handler.
+fn set_service_envs(inventory_uri: &str, wallet_uri: &str) {
+    unsafe {
+        std::env::set_var("INVENTORY_SERVICE_URL", inventory_uri);
+        std::env::set_var("WALLET_SERVICE_URL", wallet_uri);
+        std::env::set_var("INTERNAL_SERVICE_KEY", "test-key");
+    }
+}
+
+fn set_inventory_env(uri: &str) {
+    unsafe {
+        std::env::set_var("INVENTORY_SERVICE_URL", uri);
+        std::env::set_var("INTERNAL_SERVICE_KEY", "test-key");
+    }
+}
+
+fn set_wallet_env(uri: &str) {
+    unsafe {
+        std::env::set_var("WALLET_SERVICE_URL", uri);
+        std::env::set_var("INTERNAL_SERVICE_KEY", "test-key");
+    }
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
-// REPOSITORIES — order.rs (lines 13-82)
+// REPOSITORIES — order.rs
 // ═══════════════════════════════════════════════════════════════════════════════
 
 #[tokio::test]
 #[serial]
 async fn test_repo_create_dan_find_by_id() {
-    dotenvy::dotenv().ok();
-    let pool = std::sync::Arc::new(make_pool().await);
-
+    let pool = make_arc_pool().await;
     let order = create_test_order(&pool).await;
 
     assert_eq!(order.quantity, 1);
@@ -149,7 +223,6 @@ async fn test_repo_create_dan_find_by_id() {
     assert_eq!(order.service_fee, 10000i64);
     assert_eq!(order.total_price, 110000i64);
 
-    // Pastikan find_by_id bekerja
     let found = crate::repositories::order::find_by_id(&pool, order.order_id)
         .await
         .expect("find_by_id gagal");
@@ -162,9 +235,7 @@ async fn test_repo_create_dan_find_by_id() {
 #[tokio::test]
 #[serial]
 async fn test_repo_find_by_id_tidak_ada() {
-    dotenvy::dotenv().ok();
     let pool = make_pool().await;
-
     let result = crate::repositories::order::find_by_id(&pool, uuid::Uuid::new_v4())
         .await
         .expect("Query tidak boleh error");
@@ -174,9 +245,7 @@ async fn test_repo_find_by_id_tidak_ada() {
 #[tokio::test]
 #[serial]
 async fn test_repo_find_all_dengan_filter_titipers() {
-    dotenvy::dotenv().ok();
-    let pool = std::sync::Arc::new(make_pool().await);
-
+    let pool = make_arc_pool().await;
     let order = create_test_order(&pool).await;
 
     let filter = Some(crate::models::order::OrderFilter {
@@ -196,9 +265,7 @@ async fn test_repo_find_all_dengan_filter_titipers() {
 #[tokio::test]
 #[serial]
 async fn test_repo_find_all_dengan_filter_jastiper() {
-    dotenvy::dotenv().ok();
-    let pool = std::sync::Arc::new(make_pool().await);
-
+    let pool = make_arc_pool().await;
     let order = create_test_order(&pool).await;
 
     let filter = Some(crate::models::order::OrderFilter {
@@ -218,9 +285,7 @@ async fn test_repo_find_all_dengan_filter_jastiper() {
 #[tokio::test]
 #[serial]
 async fn test_repo_find_all_tanpa_filter() {
-    dotenvy::dotenv().ok();
-    let pool = std::sync::Arc::new(make_pool().await);
-
+    let pool = make_arc_pool().await;
     let order = create_test_order(&pool).await;
 
     let (orders, total) = crate::repositories::order::find_all(&pool, None, Some(1), Some(10))
@@ -236,9 +301,7 @@ async fn test_repo_find_all_tanpa_filter() {
 #[tokio::test]
 #[serial]
 async fn test_repo_insert_status_history() {
-    dotenvy::dotenv().ok();
-    let pool = std::sync::Arc::new(make_pool().await);
-
+    let pool = make_arc_pool().await;
     let order = create_test_order(&pool).await;
 
     // insert_status_history dipanggil saat create, cek hasilnya
@@ -256,9 +319,7 @@ async fn test_repo_insert_status_history() {
 #[tokio::test]
 #[serial]
 async fn test_repo_update_status_valid_transition() {
-    dotenvy::dotenv().ok();
-    let pool = std::sync::Arc::new(make_pool().await);
-
+    let pool = make_arc_pool().await;
     let order = create_test_order(&pool).await;
 
     let updated = crate::repositories::order::update_status(
@@ -271,8 +332,8 @@ async fn test_repo_update_status_valid_transition() {
         None,
         None,
     )
-    .await
-    .expect("update_status gagal");
+        .await
+        .expect("update_status gagal");
 
     assert_eq!(updated.status, crate::models::order::OrderStatus::Purchased);
 
@@ -287,9 +348,7 @@ async fn test_repo_update_status_valid_transition() {
 #[tokio::test]
 #[serial]
 async fn test_repo_update_status_dengan_tracking() {
-    dotenvy::dotenv().ok();
-    let pool = std::sync::Arc::new(make_pool().await);
-
+    let pool = make_arc_pool().await;
     let order = create_test_order(&pool).await;
 
     // PAID → PURCHASED
@@ -303,8 +362,8 @@ async fn test_repo_update_status_dengan_tracking() {
         None,
         None,
     )
-    .await
-    .unwrap();
+        .await
+        .unwrap();
 
     // PURCHASED → SHIPPED dengan tracking
     let updated = crate::repositories::order::update_status(
@@ -317,8 +376,8 @@ async fn test_repo_update_status_dengan_tracking() {
         Some("JNE-12345"),
         Some("JNE"),
     )
-    .await
-    .expect("update ke SHIPPED gagal");
+        .await
+        .expect("update ke SHIPPED gagal");
 
     assert_eq!(updated.status, crate::models::order::OrderStatus::Shipped);
     assert_eq!(updated.tracking_number.as_deref(), Some("JNE-12345"));
@@ -330,9 +389,7 @@ async fn test_repo_update_status_dengan_tracking() {
 #[tokio::test]
 #[serial]
 async fn test_repo_update_status_ke_completed_set_completed_at() {
-    dotenvy::dotenv().ok();
-    let pool = std::sync::Arc::new(make_pool().await);
-
+    let pool = make_arc_pool().await;
     let order = create_test_order(&pool).await;
 
     for (status, role) in [
@@ -349,8 +406,8 @@ async fn test_repo_update_status_ke_completed_set_completed_at() {
             None,
             None,
         )
-        .await
-        .unwrap();
+            .await
+            .unwrap();
     }
 
     let completed = crate::repositories::order::update_status(
@@ -363,13 +420,10 @@ async fn test_repo_update_status_ke_completed_set_completed_at() {
         None,
         None,
     )
-    .await
-    .expect("update ke COMPLETED gagal");
+        .await
+        .expect("update ke COMPLETED gagal");
 
-    assert_eq!(
-        completed.status,
-        crate::models::order::OrderStatus::Completed
-    );
+    assert_eq!(completed.status, crate::models::order::OrderStatus::Completed);
     assert!(completed.completed_at.is_some());
 
     cleanup_order(&pool, order.order_id).await;
@@ -378,9 +432,7 @@ async fn test_repo_update_status_ke_completed_set_completed_at() {
 #[tokio::test]
 #[serial]
 async fn test_repo_update_status_invalid_transition() {
-    dotenvy::dotenv().ok();
-    let pool = std::sync::Arc::new(make_pool().await);
-
+    let pool = make_arc_pool().await;
     let order = create_test_order(&pool).await; // status PAID
 
     // PAID → COMPLETED langsung tidak valid
@@ -394,7 +446,7 @@ async fn test_repo_update_status_invalid_transition() {
         None,
         None,
     )
-    .await;
+        .await;
 
     assert!(result.is_err());
     assert!(matches!(
@@ -408,7 +460,6 @@ async fn test_repo_update_status_invalid_transition() {
 #[tokio::test]
 #[serial]
 async fn test_repo_update_status_order_tidak_ada() {
-    dotenvy::dotenv().ok();
     let pool = make_pool().await;
 
     let result = crate::repositories::order::update_status(
@@ -421,7 +472,7 @@ async fn test_repo_update_status_order_tidak_ada() {
         None,
         None,
     )
-    .await;
+        .await;
 
     assert!(result.is_err());
     assert!(matches!(
@@ -433,9 +484,7 @@ async fn test_repo_update_status_order_tidak_ada() {
 #[tokio::test]
 #[serial]
 async fn test_repo_cancel_order() {
-    dotenvy::dotenv().ok();
-    let pool = std::sync::Arc::new(make_pool().await);
-
+    let pool = make_arc_pool().await;
     let order = create_test_order(&pool).await;
 
     let cancelled = crate::repositories::order::cancel_order(
@@ -447,13 +496,10 @@ async fn test_repo_cancel_order() {
         "JASTIPER",
         Some("Dibatalkan oleh jastiper"),
     )
-    .await
-    .expect("cancel_order gagal");
+        .await
+        .expect("cancel_order gagal");
 
-    assert_eq!(
-        cancelled.status,
-        crate::models::order::OrderStatus::Cancelled
-    );
+    assert_eq!(cancelled.status, crate::models::order::OrderStatus::Cancelled);
     assert_eq!(cancelled.cancellation_reason.as_deref(), Some("OTHER"));
 
     let history = crate::repositories::order::get_status_history(&pool, order.order_id)
@@ -467,7 +513,6 @@ async fn test_repo_cancel_order() {
 #[tokio::test]
 #[serial]
 async fn test_repo_cancel_order_tidak_ada() {
-    dotenvy::dotenv().ok();
     let pool = make_pool().await;
 
     let result = crate::repositories::order::cancel_order(
@@ -479,7 +524,7 @@ async fn test_repo_cancel_order_tidak_ada() {
         "ADMIN",
         None,
     )
-    .await;
+        .await;
 
     assert!(result.is_err());
     assert!(matches!(
@@ -491,9 +536,7 @@ async fn test_repo_cancel_order_tidak_ada() {
 #[tokio::test]
 #[serial]
 async fn test_repo_cancel_order_dari_terminal_state() {
-    dotenvy::dotenv().ok();
-    let pool = std::sync::Arc::new(make_pool().await);
-
+    let pool = make_arc_pool().await;
     let order = create_test_order(&pool).await;
 
     // Cancel pertama → berhasil
@@ -506,8 +549,8 @@ async fn test_repo_cancel_order_dari_terminal_state() {
         "ADMIN",
         None,
     )
-    .await
-    .unwrap();
+        .await
+        .unwrap();
 
     // Cancel kedua dari CANCELLED → harus gagal (terminal state)
     let result = crate::repositories::order::cancel_order(
@@ -519,7 +562,7 @@ async fn test_repo_cancel_order_dari_terminal_state() {
         "ADMIN",
         None,
     )
-    .await;
+        .await;
 
     assert!(result.is_err());
     assert!(matches!(
@@ -531,28 +574,23 @@ async fn test_repo_cancel_order_dari_terminal_state() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// HANDLERS — order.rs (reserve/release/deduct/refund/fetch_product)
+// HANDLERS — checkout
 // ═══════════════════════════════════════════════════════════════════════════════
 
 #[tokio::test]
 #[serial]
 async fn test_checkout_success() {
-    dotenvy::dotenv().ok();
     let (inventory_server, wallet_server) = setup_mocks().await;
-    unsafe {
-        std::env::set_var("INVENTORY_SERVICE_URL", inventory_server.uri());
-        std::env::set_var("WALLET_SERVICE_URL", wallet_server.uri());
-        std::env::set_var("INTERNAL_SERVICE_KEY", "test-key");
-    }
+    set_service_envs(&inventory_server.uri(), &wallet_server.uri());
 
-    let pool = std::sync::Arc::new(make_pool().await);
+    let pool = make_arc_pool().await;
     let req: crate::models::order::CreateOrderRequest = serde_json::from_value(json!({
         "product_id": "550e8400-e29b-41d4-a716-446655440000",
         "quantity": 1,
         "shipping_address": shipping_address_json(),
         "note_to_jastiper": null
     }))
-    .unwrap();
+        .unwrap();
 
     let order = crate::repositories::order::create(
         &pool,
@@ -565,12 +603,13 @@ async fn test_checkout_success() {
         10000i64,
         110000i64,
     )
-    .await;
+        .await;
 
     assert!(order.is_ok(), "Order harus berhasil: {:?}", order.err());
     let order = order.unwrap();
     assert_eq!(order.quantity, 1);
     assert_eq!(order.unit_price, 100000i64);
+
     cleanup_order(&pool, order.order_id).await;
 }
 
@@ -580,24 +619,15 @@ async fn test_checkout_stok_habis() {
     let inventory_server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path_regex("/internal/products/.*/stock/reserve"))
-        .respond_with(ResponseTemplate::new(409).set_body_json(json!({
-            "message": "Insufficient stock"
-        })))
+        .respond_with(ResponseTemplate::new(409).set_body_json(json!({"message": "Insufficient stock"})))
         .mount(&inventory_server)
         .await;
-    unsafe {
-        std::env::set_var("INVENTORY_SERVICE_URL", inventory_server.uri());
-        std::env::set_var("INTERNAL_SERVICE_KEY", "test-key");
-    }
+    set_inventory_env(&inventory_server.uri());
 
     let result =
         crate::handlers::order::reserve_stock(uuid::Uuid::new_v4(), uuid::Uuid::new_v4(), 1).await;
 
-    assert!(result.is_err());
-    assert!(matches!(
-        result.unwrap_err(),
-        crate::error::AppError::Conflict(_)
-    ));
+    assert!(matches!(result.unwrap_err(), crate::error::AppError::Conflict(_)));
 }
 
 #[tokio::test]
@@ -606,15 +636,10 @@ async fn test_checkout_saldo_tidak_cukup() {
     let wallet_server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path("/internal/wallets/deduct"))
-        .respond_with(ResponseTemplate::new(422).set_body_json(json!({
-            "message": "Insufficient balance"
-        })))
+        .respond_with(ResponseTemplate::new(422).set_body_json(json!({"message": "Insufficient balance"})))
         .mount(&wallet_server)
         .await;
-    unsafe {
-        std::env::set_var("WALLET_SERVICE_URL", wallet_server.uri());
-        std::env::set_var("INTERNAL_SERVICE_KEY", "test-key");
-    }
+    set_wallet_env(&wallet_server.uri());
 
     let result = crate::handlers::order::deduct_wallet(
         uuid::Uuid::new_v4(),
@@ -622,97 +647,85 @@ async fn test_checkout_saldo_tidak_cukup() {
         110000i64,
         "Pembayaran test",
     )
-    .await;
+        .await;
 
-    assert!(result.is_err());
-    assert!(matches!(
-        result.unwrap_err(),
-        crate::error::AppError::UnprocessableEntity(_)
-    ));
+    assert!(matches!(result.unwrap_err(), crate::error::AppError::UnprocessableEntity(_)));
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// HANDLERS — reserve_stock
+// ═══════════════════════════════════════════════════════════════════════════════
+
+async fn setup_reserve_mock(status: u16) -> MockServer {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path_regex("/internal/products/.*/stock/reserve"))
+        .respond_with(ResponseTemplate::new(status))
+        .mount(&server)
+        .await;
+    server
 }
 
 #[tokio::test]
 #[serial]
 async fn test_reserve_stock_produk_tidak_ditemukan() {
-    let inventory_server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path_regex("/internal/products/.*/stock/reserve"))
-        .respond_with(ResponseTemplate::new(404))
-        .mount(&inventory_server)
-        .await;
-    unsafe {
-        std::env::set_var("INVENTORY_SERVICE_URL", inventory_server.uri());
-        std::env::set_var("INTERNAL_SERVICE_KEY", "test-key");
-    }
+    let server = setup_reserve_mock(404).await;
+    set_inventory_env(&server.uri());
 
     let result =
         crate::handlers::order::reserve_stock(uuid::Uuid::new_v4(), uuid::Uuid::new_v4(), 1).await;
 
-    assert!(matches!(
-        result.unwrap_err(),
-        crate::error::AppError::NotFound(_)
-    ));
+    assert!(matches!(result.unwrap_err(), crate::error::AppError::NotFound(_)));
 }
 
 #[tokio::test]
 #[serial]
 async fn test_reserve_stock_produk_tidak_aktif() {
-    let inventory_server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path_regex("/internal/products/.*/stock/reserve"))
-        .respond_with(ResponseTemplate::new(422))
-        .mount(&inventory_server)
-        .await;
-    unsafe {
-        std::env::set_var("INVENTORY_SERVICE_URL", inventory_server.uri());
-        std::env::set_var("INTERNAL_SERVICE_KEY", "test-key");
-    }
+    let server = setup_reserve_mock(422).await;
+    set_inventory_env(&server.uri());
 
     let result =
         crate::handlers::order::reserve_stock(uuid::Uuid::new_v4(), uuid::Uuid::new_v4(), 1).await;
 
-    assert!(matches!(
-        result.unwrap_err(),
-        crate::error::AppError::UnprocessableEntity(_)
-    ));
+    assert!(matches!(result.unwrap_err(), crate::error::AppError::UnprocessableEntity(_)));
 }
 
 #[tokio::test]
 #[serial]
 async fn test_reserve_stock_server_error() {
-    let inventory_server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path_regex("/internal/products/.*/stock/reserve"))
-        .respond_with(ResponseTemplate::new(500))
-        .mount(&inventory_server)
-        .await;
-    unsafe {
-        std::env::set_var("INVENTORY_SERVICE_URL", inventory_server.uri());
-        std::env::set_var("INTERNAL_SERVICE_KEY", "test-key");
-    }
+    let server = setup_reserve_mock(500).await;
+    set_inventory_env(&server.uri());
 
     let result =
         crate::handlers::order::reserve_stock(uuid::Uuid::new_v4(), uuid::Uuid::new_v4(), 1).await;
 
-    assert!(matches!(
-        result.unwrap_err(),
-        crate::error::AppError::Internal
-    ));
+    assert!(matches!(result.unwrap_err(), crate::error::AppError::Internal));
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// HANDLERS — release_stock
+// ═══════════════════════════════════════════════════════════════════════════════
+
+async fn setup_release_mock(status: u16) -> MockServer {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path_regex("/internal/products/.*/stock/release"))
+        .respond_with(ResponseTemplate::new(status))
+        .mount(&server)
+        .await;
+    server
 }
 
 #[tokio::test]
 #[serial]
 async fn test_release_stock_success() {
-    let inventory_server = MockServer::start().await;
+    let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path_regex("/internal/products/.*/stock/release"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({"status": "ok"})))
-        .mount(&inventory_server)
+        .mount(&server)
         .await;
-    unsafe {
-        std::env::set_var("INVENTORY_SERVICE_URL", inventory_server.uri());
-        std::env::set_var("INTERNAL_SERVICE_KEY", "test-key");
-    }
+    set_inventory_env(&server.uri());
 
     let result =
         crate::handlers::order::release_stock(uuid::Uuid::new_v4(), uuid::Uuid::new_v4(), 1).await;
@@ -722,267 +735,167 @@ async fn test_release_stock_success() {
 #[tokio::test]
 #[serial]
 async fn test_release_stock_tidak_ditemukan() {
-    let inventory_server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path_regex("/internal/products/.*/stock/release"))
-        .respond_with(ResponseTemplate::new(404))
-        .mount(&inventory_server)
-        .await;
-    unsafe {
-        std::env::set_var("INVENTORY_SERVICE_URL", inventory_server.uri());
-        std::env::set_var("INTERNAL_SERVICE_KEY", "test-key");
-    }
+    let server = setup_release_mock(404).await;
+    set_inventory_env(&server.uri());
 
     let result =
         crate::handlers::order::release_stock(uuid::Uuid::new_v4(), uuid::Uuid::new_v4(), 1).await;
-    assert!(matches!(
-        result.unwrap_err(),
-        crate::error::AppError::NotFound(_)
-    ));
+    assert!(matches!(result.unwrap_err(), crate::error::AppError::NotFound(_)));
 }
 
 #[tokio::test]
 #[serial]
 async fn test_release_stock_conflict() {
-    let inventory_server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path_regex("/internal/products/.*/stock/release"))
-        .respond_with(ResponseTemplate::new(409))
-        .mount(&inventory_server)
-        .await;
-    unsafe {
-        std::env::set_var("INVENTORY_SERVICE_URL", inventory_server.uri());
-        std::env::set_var("INTERNAL_SERVICE_KEY", "test-key");
-    }
+    let server = setup_release_mock(409).await;
+    set_inventory_env(&server.uri());
 
     let result =
         crate::handlers::order::release_stock(uuid::Uuid::new_v4(), uuid::Uuid::new_v4(), 1).await;
-    assert!(matches!(
-        result.unwrap_err(),
-        crate::error::AppError::Conflict(_)
-    ));
+    assert!(matches!(result.unwrap_err(), crate::error::AppError::Conflict(_)));
 }
 
 #[tokio::test]
 #[serial]
 async fn test_release_stock_unprocessable() {
-    let inventory_server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path_regex("/internal/products/.*/stock/release"))
-        .respond_with(ResponseTemplate::new(422))
-        .mount(&inventory_server)
-        .await;
-    unsafe {
-        std::env::set_var("INVENTORY_SERVICE_URL", inventory_server.uri());
-        std::env::set_var("INTERNAL_SERVICE_KEY", "test-key");
-    }
+    let server = setup_release_mock(422).await;
+    set_inventory_env(&server.uri());
 
     let result =
         crate::handlers::order::release_stock(uuid::Uuid::new_v4(), uuid::Uuid::new_v4(), 1).await;
-    assert!(matches!(
-        result.unwrap_err(),
-        crate::error::AppError::UnprocessableEntity(_)
-    ));
+    assert!(matches!(result.unwrap_err(), crate::error::AppError::UnprocessableEntity(_)));
 }
 
 #[tokio::test]
 #[serial]
 async fn test_release_stock_server_error() {
-    let inventory_server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path_regex("/internal/products/.*/stock/release"))
-        .respond_with(ResponseTemplate::new(500))
-        .mount(&inventory_server)
-        .await;
-    unsafe {
-        std::env::set_var("INVENTORY_SERVICE_URL", inventory_server.uri());
-        std::env::set_var("INTERNAL_SERVICE_KEY", "test-key");
-    }
+    let server = setup_release_mock(500).await;
+    set_inventory_env(&server.uri());
 
     let result =
         crate::handlers::order::release_stock(uuid::Uuid::new_v4(), uuid::Uuid::new_v4(), 1).await;
-    assert!(matches!(
-        result.unwrap_err(),
-        crate::error::AppError::Internal
-    ));
+    assert!(matches!(result.unwrap_err(), crate::error::AppError::Internal));
 }
 
-#[tokio::test]
-#[serial]
-async fn test_deduct_wallet_success() {
-    let wallet_server = MockServer::start().await;
+// ═══════════════════════════════════════════════════════════════════════════════
+// HANDLERS — deduct_wallet
+// ═══════════════════════════════════════════════════════════════════════════════
+
+async fn setup_deduct_mock(status: u16) -> MockServer {
+    let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path("/internal/wallets/deduct"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"status": "ok"})))
-        .mount(&wallet_server)
+        .respond_with(ResponseTemplate::new(status))
+        .mount(&server)
         .await;
-    unsafe {
-        std::env::set_var("WALLET_SERVICE_URL", wallet_server.uri());
-        std::env::set_var("INTERNAL_SERVICE_KEY", "test-key");
-    }
+    server
+}
 
-    let result = crate::handlers::order::deduct_wallet(
+async fn call_deduct_wallet(uri: &str) -> Result<(), crate::error::AppError> {
+    set_wallet_env(uri);
+    crate::handlers::order::deduct_wallet(
         uuid::Uuid::new_v4(),
         uuid::Uuid::new_v4(),
         50000,
         "Test",
     )
-    .await;
+        .await
+}
+
+#[tokio::test]
+#[serial]
+async fn test_deduct_wallet_success() {
+    let server = mock_wallet_with_body("/internal/wallets/deduct", 200, json!({"status": "ok"})).await;
+    let result = call_deduct_wallet(&server.uri()).await;
     assert!(result.is_ok());
 }
 
 #[tokio::test]
 #[serial]
 async fn test_deduct_wallet_user_tidak_ditemukan() {
-    let wallet_server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path("/internal/wallets/deduct"))
-        .respond_with(ResponseTemplate::new(404))
-        .mount(&wallet_server)
-        .await;
-    unsafe {
-        std::env::set_var("WALLET_SERVICE_URL", wallet_server.uri());
-        std::env::set_var("INTERNAL_SERVICE_KEY", "test-key");
-    }
-
-    let result = crate::handlers::order::deduct_wallet(
-        uuid::Uuid::new_v4(),
-        uuid::Uuid::new_v4(),
-        50000,
-        "Test",
-    )
-    .await;
-    assert!(matches!(
-        result.unwrap_err(),
-        crate::error::AppError::NotFound(_)
-    ));
+    let server = setup_deduct_mock(404).await;
+    let result = call_deduct_wallet(&server.uri()).await;
+    assert!(matches!(result.unwrap_err(), crate::error::AppError::NotFound(_)));
 }
 
 #[tokio::test]
 #[serial]
 async fn test_deduct_wallet_idempotent_409() {
-    let wallet_server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path("/internal/wallets/deduct"))
-        .respond_with(ResponseTemplate::new(409))
-        .mount(&wallet_server)
-        .await;
-    unsafe {
-        std::env::set_var("WALLET_SERVICE_URL", wallet_server.uri());
-        std::env::set_var("INTERNAL_SERVICE_KEY", "test-key");
-    }
-
+    let server = setup_deduct_mock(409).await;
     // 409 harus dianggap sukses (idempotent)
-    let result = crate::handlers::order::deduct_wallet(
-        uuid::Uuid::new_v4(),
-        uuid::Uuid::new_v4(),
-        50000,
-        "Test",
-    )
-    .await;
+    let result = call_deduct_wallet(&server.uri()).await;
     assert!(result.is_ok());
 }
 
 #[tokio::test]
 #[serial]
 async fn test_deduct_wallet_server_error() {
-    let wallet_server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path("/internal/wallets/deduct"))
-        .respond_with(ResponseTemplate::new(500))
-        .mount(&wallet_server)
-        .await;
-    unsafe {
-        std::env::set_var("WALLET_SERVICE_URL", wallet_server.uri());
-        std::env::set_var("INTERNAL_SERVICE_KEY", "test-key");
-    }
-
-    let result = crate::handlers::order::deduct_wallet(
-        uuid::Uuid::new_v4(),
-        uuid::Uuid::new_v4(),
-        50000,
-        "Test",
-    )
-    .await;
-    assert!(matches!(
-        result.unwrap_err(),
-        crate::error::AppError::Internal
-    ));
+    let server = setup_deduct_mock(500).await;
+    let result = call_deduct_wallet(&server.uri()).await;
+    assert!(matches!(result.unwrap_err(), crate::error::AppError::Internal));
 }
 
-#[tokio::test]
-#[serial]
-async fn test_refund_wallet_success() {
-    let wallet_server = MockServer::start().await;
+// ═══════════════════════════════════════════════════════════════════════════════
+// HANDLERS — refund_wallet
+// ═══════════════════════════════════════════════════════════════════════════════
+
+async fn setup_refund_mock(status: u16) -> MockServer {
+    let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path("/internal/wallets/refund"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"status": "ok"})))
-        .mount(&wallet_server)
+        .respond_with(ResponseTemplate::new(status))
+        .mount(&server)
         .await;
-    unsafe {
-        std::env::set_var("WALLET_SERVICE_URL", wallet_server.uri());
-        std::env::set_var("INTERNAL_SERVICE_KEY", "test-key");
-    }
+    server
+}
 
-    let result = crate::handlers::order::refund_wallet(
+async fn call_refund_wallet(uri: &str) -> Result<(), crate::error::AppError> {
+    set_wallet_env(uri);
+    crate::handlers::order::refund_wallet(
         uuid::Uuid::new_v4(),
         uuid::Uuid::new_v4(),
         50000,
         "Refund test",
     )
-    .await;
+        .await
+}
+
+#[tokio::test]
+#[serial]
+async fn test_refund_wallet_success() {
+    let server = mock_wallet_with_body("/internal/wallets/refund", 200, json!({"status": "ok"})).await;
+    let result = call_refund_wallet(&server.uri()).await;
     assert!(result.is_ok());
 }
 
 #[tokio::test]
 #[serial]
 async fn test_refund_wallet_idempotent_409() {
-    let wallet_server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path("/internal/wallets/refund"))
-        .respond_with(ResponseTemplate::new(409))
-        .mount(&wallet_server)
-        .await;
-    unsafe {
-        std::env::set_var("WALLET_SERVICE_URL", wallet_server.uri());
-        std::env::set_var("INTERNAL_SERVICE_KEY", "test-key");
-    }
-
-    let result = crate::handlers::order::refund_wallet(
-        uuid::Uuid::new_v4(),
-        uuid::Uuid::new_v4(),
-        50000,
-        "Refund test",
-    )
-    .await;
+    let server = setup_refund_mock(409).await;
+    // 409 harus dianggap sukses (idempotent)
+    let result = call_refund_wallet(&server.uri()).await;
     assert!(result.is_ok());
 }
 
 #[tokio::test]
 #[serial]
 async fn test_refund_wallet_server_error() {
-    let wallet_server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path("/internal/wallets/refund"))
-        .respond_with(ResponseTemplate::new(500))
-        .mount(&wallet_server)
-        .await;
-    unsafe {
-        std::env::set_var("WALLET_SERVICE_URL", wallet_server.uri());
-        std::env::set_var("INTERNAL_SERVICE_KEY", "test-key");
-    }
+    let server = setup_refund_mock(500).await;
+    let result = call_refund_wallet(&server.uri()).await;
+    assert!(matches!(result.unwrap_err(), crate::error::AppError::Internal));
+}
 
-    let result = crate::handlers::order::refund_wallet(
-        uuid::Uuid::new_v4(),
-        uuid::Uuid::new_v4(),
-        50000,
-        "Refund test",
-    )
-    .await;
-    assert!(matches!(
-        result.unwrap_err(),
-        crate::error::AppError::Internal
-    ));
+// ═══════════════════════════════════════════════════════════════════════════════
+// HANDLERS — fetch_product
+// ═══════════════════════════════════════════════════════════════════════════════
+
+async fn setup_fetch_product_mock(status: u16) -> MockServer {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path_regex("/products/.*"))
+        .respond_with(ResponseTemplate::new(status))
+        .mount(&server)
+        .await;
+    server
 }
 
 #[tokio::test]
@@ -1008,9 +921,7 @@ async fn test_fetch_product_success() {
         })))
         .mount(&inventory_server)
         .await;
-    unsafe {
-        std::env::set_var("INVENTORY_SERVICE_URL", inventory_server.uri());
-    }
+    unsafe { std::env::set_var("INVENTORY_SERVICE_URL", inventory_server.uri()); }
 
     let result = crate::handlers::order::fetch_product(uuid::Uuid::new_v4()).await;
     assert!(result.is_ok());
@@ -1021,65 +932,35 @@ async fn test_fetch_product_success() {
 #[tokio::test]
 #[serial]
 async fn test_fetch_product_tidak_ditemukan() {
-    let inventory_server = MockServer::start().await;
-    Mock::given(method("GET"))
-        .and(path_regex("/products/.*"))
-        .respond_with(ResponseTemplate::new(404))
-        .mount(&inventory_server)
-        .await;
-    unsafe {
-        std::env::set_var("INVENTORY_SERVICE_URL", inventory_server.uri());
-    }
+    let server = setup_fetch_product_mock(404).await;
+    unsafe { std::env::set_var("INVENTORY_SERVICE_URL", server.uri()); }
 
     let result = crate::handlers::order::fetch_product(uuid::Uuid::new_v4()).await;
-    assert!(matches!(
-        result.unwrap_err(),
-        crate::error::AppError::NotFound(_)
-    ));
+    assert!(matches!(result.unwrap_err(), crate::error::AppError::NotFound(_)));
 }
 
 #[tokio::test]
 #[serial]
 async fn test_fetch_product_tidak_aktif() {
-    let inventory_server = MockServer::start().await;
-    Mock::given(method("GET"))
-        .and(path_regex("/products/.*"))
-        .respond_with(ResponseTemplate::new(422))
-        .mount(&inventory_server)
-        .await;
-    unsafe {
-        std::env::set_var("INVENTORY_SERVICE_URL", inventory_server.uri());
-    }
+    let server = setup_fetch_product_mock(422).await;
+    unsafe { std::env::set_var("INVENTORY_SERVICE_URL", server.uri()); }
 
     let result = crate::handlers::order::fetch_product(uuid::Uuid::new_v4()).await;
-    assert!(matches!(
-        result.unwrap_err(),
-        crate::error::AppError::UnprocessableEntity(_)
-    ));
+    assert!(matches!(result.unwrap_err(), crate::error::AppError::UnprocessableEntity(_)));
 }
 
 #[tokio::test]
 #[serial]
 async fn test_fetch_product_server_error() {
-    let inventory_server = MockServer::start().await;
-    Mock::given(method("GET"))
-        .and(path_regex("/products/.*"))
-        .respond_with(ResponseTemplate::new(500))
-        .mount(&inventory_server)
-        .await;
-    unsafe {
-        std::env::set_var("INVENTORY_SERVICE_URL", inventory_server.uri());
-    }
+    let server = setup_fetch_product_mock(500).await;
+    unsafe { std::env::set_var("INVENTORY_SERVICE_URL", server.uri()); }
 
     let result = crate::handlers::order::fetch_product(uuid::Uuid::new_v4()).await;
-    assert!(matches!(
-        result.unwrap_err(),
-        crate::error::AppError::Internal
-    ));
+    assert!(matches!(result.unwrap_err(), crate::error::AppError::Internal));
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// MODELS — order.rs: state machine (lines 46-58)
+// MODELS — order.rs: state machine
 // ═══════════════════════════════════════════════════════════════════════════════
 
 #[test]
@@ -1104,7 +985,7 @@ fn test_state_machine_invalid_transitions() {
     assert!(!Paid.can_transition_to(&Completed));
     assert!(!Shipped.can_transition_to(&Pending));
     assert!(!Completed.can_transition_to(&Cancelled)); // terminal
-    assert!(!Cancelled.can_transition_to(&Paid)); // terminal
+    assert!(!Cancelled.can_transition_to(&Paid));      // terminal
 }
 
 #[test]
@@ -1116,7 +997,7 @@ fn test_state_machine_terminal_states_kosong() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// ERROR — error.rs: IntoResponse coverage (lines 58-102)
+// ERROR — error.rs: IntoResponse coverage
 // ═══════════════════════════════════════════════════════════════════════════════
 
 #[test]
@@ -1130,10 +1011,7 @@ fn test_error_into_response_semua_variant() {
         (AppError::Forbidden("forbidden".to_string()), 403),
         (AppError::NotFound("not found".to_string()), 404),
         (AppError::Conflict("conflict".to_string()), 409),
-        (
-            AppError::UnprocessableEntity("unprocessable".to_string()),
-            422,
-        ),
+        (AppError::UnprocessableEntity("unprocessable".to_string()), 422),
         (
             AppError::InvalidStatusTransition {
                 current: "PAID".to_string(),
@@ -1161,7 +1039,6 @@ fn test_error_database_into_response() {
     use crate::error::AppError;
     use axum::response::IntoResponse;
 
-    // Simulasi sqlx::Error melalui AppError::Database
     let sqlx_err = sqlx::Error::RowNotFound;
     let err = AppError::Database(sqlx_err);
     let response = err.into_response();
@@ -1169,7 +1046,7 @@ fn test_error_database_into_response() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// MIDDLEWARE — auth.rs (lines 18-55)
+// MIDDLEWARE — auth.rs
 // ═══════════════════════════════════════════════════════════════════════════════
 
 #[test]
@@ -1210,21 +1087,24 @@ fn test_jwt_claims_user_id_invalid_uuid() {
     ));
 }
 
+/// Helper: buat request parts dengan header Authorization opsional.
+fn make_request_parts(auth_header: Option<&'static str>) -> axum::http::request::Parts {
+    let mut builder = axum::http::Request::builder();
+    if let Some(value) = auth_header {
+        builder = builder.header(axum::http::header::AUTHORIZATION, value);
+    }
+    let (parts, _) = builder.body(()).unwrap().into_parts();
+    parts
+}
+
 #[tokio::test]
 async fn test_jwt_from_request_parts_tanpa_header() {
     use crate::middleware::auth::JwtClaims;
     use axum::extract::FromRequestParts;
 
-    use axum::http::Request;
-
-    let request = Request::builder().body(()).unwrap();
-    let (mut parts, _) = request.into_parts();
+    let mut parts = make_request_parts(None);
     let result = JwtClaims::from_request_parts(&mut parts, &()).await;
-    assert!(result.is_err());
-    assert!(matches!(
-        result.unwrap_err(),
-        crate::error::AppError::Unauthorized(_)
-    ));
+    assert!(matches!(result.unwrap_err(), crate::error::AppError::Unauthorized(_)));
 }
 
 #[tokio::test]
@@ -1232,21 +1112,9 @@ async fn test_jwt_from_request_parts_format_salah() {
     use crate::middleware::auth::JwtClaims;
     use axum::extract::FromRequestParts;
 
-    use axum::http::Request;
-
-    let request = Request::builder().body(()).unwrap();
-    let (mut parts, _) = request.into_parts();
-    parts.headers.insert(
-        axum::http::header::AUTHORIZATION,
-        axum::http::HeaderValue::from_static("Token abc123"),
-    );
-
+    let mut parts = make_request_parts(Some("Token abc123"));
     let result = JwtClaims::from_request_parts(&mut parts, &()).await;
-    assert!(result.is_err());
-    assert!(matches!(
-        result.unwrap_err(),
-        crate::error::AppError::Unauthorized(_)
-    ));
+    assert!(matches!(result.unwrap_err(), crate::error::AppError::Unauthorized(_)));
 }
 
 #[tokio::test]
@@ -1254,25 +1122,11 @@ async fn test_jwt_from_request_parts_token_invalid() {
     use crate::middleware::auth::JwtClaims;
     use axum::extract::FromRequestParts;
 
-    unsafe {
-        std::env::set_var("JWT_SECRET", "test-secret");
-    }
+    unsafe { std::env::set_var("JWT_SECRET", "test-secret"); }
 
-    use axum::http::Request;
-
-    let request = Request::builder().body(()).unwrap();
-    let (mut parts, _) = request.into_parts();
-    parts.headers.insert(
-        axum::http::header::AUTHORIZATION,
-        axum::http::HeaderValue::from_static("Bearer token.tidak.valid"),
-    );
-
+    let mut parts = make_request_parts(Some("Bearer token.tidak.valid"));
     let result = JwtClaims::from_request_parts(&mut parts, &()).await;
-    assert!(result.is_err());
-    assert!(matches!(
-        result.unwrap_err(),
-        crate::error::AppError::Unauthorized(_)
-    ));
+    assert!(matches!(result.unwrap_err(), crate::error::AppError::Unauthorized(_)));
 }
 
 #[tokio::test]
@@ -1282,9 +1136,7 @@ async fn test_jwt_from_request_parts_token_valid() {
     use jsonwebtoken::{EncodingKey, Header, encode};
 
     let secret = "test-secret-jwt";
-    unsafe {
-        std::env::set_var("JWT_SECRET", secret);
-    }
+    unsafe { std::env::set_var("JWT_SECRET", secret); }
 
     let user_id = uuid::Uuid::new_v4();
     let claims = JwtClaims {
@@ -1300,20 +1152,20 @@ async fn test_jwt_from_request_parts_token_valid() {
         &claims,
         &EncodingKey::from_secret(secret.as_bytes()),
     )
-    .expect("Gagal encode JWT");
+        .expect("Gagal encode JWT");
 
     let bearer = format!("Bearer {}", token);
-    use axum::http::Request;
-
-    let request = Request::builder().body(()).unwrap();
-    let (mut parts, _) = request.into_parts();
-    parts.headers.insert(
-        axum::http::header::AUTHORIZATION,
-        axum::http::HeaderValue::from_str(&bearer).unwrap(),
-    );
+    // Tidak bisa pakai make_request_parts karena value bukan &'static str
+    let (mut parts, _) = axum::http::Request::builder()
+        .header(
+            axum::http::header::AUTHORIZATION,
+            axum::http::HeaderValue::from_str(&bearer).unwrap(),
+        )
+        .body(())
+        .unwrap()
+        .into_parts();
 
     let result = JwtClaims::from_request_parts(&mut parts, &()).await;
     assert!(result.is_ok());
-    let parsed = result.unwrap();
-    assert_eq!(parsed.sub, user_id.to_string());
+    assert_eq!(result.unwrap().sub, user_id.to_string());
 }
