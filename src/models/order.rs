@@ -135,16 +135,16 @@ pub struct Order {
     pub product_id: Uuid,
     pub product_snapshot: JsonValue, // JSONB → ProductSnapshot
     pub quantity: i32,
-    pub unit_price: i32,  // INTEGER sesuai schema
-    pub service_fee: i32, // INTEGER sesuai schema
-    pub total_price: i32, // INTEGER, GENERATED ALWAYS di DB
+    pub unit_price: i64,
+    pub service_fee: i64,
+    pub total_price: i64,
     pub status: OrderStatus,
     pub shipping_address: JsonValue, // JSONB → ShippingAddress
     pub note_to_jastiper: Option<String>,
-    pub tracking_number: Option<String>,     // diisi saat SHIPPED
-    pub courier: Option<String>,             // diisi saat SHIPPED
-    pub cancellation_reason: Option<String>, // VARCHAR sesuai schema
-    pub cancelled_by: Option<CancelledBy>,   // cancelled_by_enum
+    pub tracking_number: Option<String>, // diisi saat SHIPPED
+    pub courier: Option<String>,         // diisi saat SHIPPED
+    pub cancellation_reason: Option<String>,
+    pub cancelled_by: Option<CancelledBy>, // cancelled_by_enum
     pub completed_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,

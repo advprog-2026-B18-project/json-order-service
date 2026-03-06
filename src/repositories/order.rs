@@ -127,9 +127,9 @@ pub async fn create(
     order_id: Uuid,
     req: CreateOrderRequest,
     product_snapshot: serde_json::Value, // ← snapshot diterima dari handler
-    unit_price: i32,
-    service_fee: i32,
-    total_price: i32,
+    unit_price: i64,
+    service_fee: i64,
+    total_price: i64,
 ) -> Result<Order> {
     let order_id = Uuid::new_v4();
     let now = Utc::now();
@@ -162,7 +162,7 @@ pub async fn create(
             unit_price.into(),  // ← dari parameter
             service_fee.into(), // ← dari parameter
             total_price.into(), // ← dari parameter
-            "PAID".into(),
+            sea_query::Expr::cust("'PAID'::order_status").into(),
             serde_json::to_value(req.shipping_address).unwrap().into(),
             req.note_to_jastiper.unwrap_or_default().into(),
             now.into(),
