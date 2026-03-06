@@ -9,7 +9,6 @@ use crate::{
     error::{AppError, Result},
     models::order::{
         CancelledBy, CreateOrderRequest, Order, OrderFilter, OrderIden, OrderStatus,
-        OrderStatusHistoryIden,
     },
 };
 
@@ -214,6 +213,7 @@ pub async fn create(
     find_by_id(pool, order_id).await?.ok_or(AppError::Internal)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn update_status(
     pool: &PgPool,
     order_id: Uuid,
