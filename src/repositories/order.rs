@@ -116,13 +116,14 @@ pub async fn find_by_id(pool: &PgPool, order_id: Uuid) -> Result<Option<Order>> 
     Ok(order)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn create(
     pool: &PgPool,
     titipers_id: Uuid,
     jastiper_id: Uuid,
     _order_id: Uuid,
     req: CreateOrderRequest,
-    product_snapshot: serde_json::Value, // ← snapshot diterima dari handler
+    product_snapshot: serde_json::Value,
     unit_price: i64,
     service_fee: i64,
     total_price: i64,
