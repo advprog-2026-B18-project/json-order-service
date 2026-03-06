@@ -9,7 +9,7 @@ mod repositories;
 mod tests;
 
 use axum::Router;
-use axum::routing::{get, post};
+use axum::routing::{get, patch, post};
 use std::sync::Arc;
 use utoipa::OpenApi;
 use utoipa_scalar::{Scalar, Servable};
@@ -20,7 +20,10 @@ use utoipa_scalar::{Scalar, Servable};
         crate::handlers::order::my_purchases,
         crate::handlers::order::my_sales,
         crate::handlers::order::get_order,
+        crate::handlers::order::get_order_history,
         crate::handlers::order::checkout,
+        crate::handlers::order::update_status,
+        crate::handlers::order::cancel_order,
     ),
     tags(
         (name = "Orders", description = "Order management endpoints")
@@ -55,6 +58,9 @@ async fn main() {
         .route("/orders/my/purchases", get(handlers::order::my_purchases))
         .route("/orders/my/sales", get(handlers::order::my_sales))
         .route("/orders/{order_id}", get(handlers::order::get_order))
+        .route("/orders/{order_id}/history", get(handlers::order::get_order_history))
+        .route("/orders/{order_id}/status", patch(handlers::order::update_status))
+        .route("/orders/{order_id}/cancel", post(handlers::order::cancel_order))
         .with_state(shared_pool);
 
     let app: Router = Router::new()
