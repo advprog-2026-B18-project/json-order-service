@@ -138,6 +138,8 @@ jobs:
 
       - name: Download coverage report
         uses: actions/download-artifact@v4
+        if: always()
+        continue-on-error: true
         with:
           name: coverage-report
           path: coverage
