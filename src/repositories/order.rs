@@ -1,16 +1,14 @@
 use chrono::Utc;
-use sea_query::{Expr, Iden};
+use sea_query::{Expr};
 use sea_query::{PostgresQueryBuilder, Query};
 use sea_query_binder::SqlxBinder;
-use serde_json::json;
 use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::{
     error::{AppError, Result},
     models::order::{
-        CancelRequest, CancelledBy, CreateOrderRequest, Order, OrderFilter, OrderIden, OrderStatus,
-        PaginationParams, ProductSnapshot, UpdateStatusRequest,
+        CreateOrderRequest, Order, OrderFilter, OrderIden,
     },
 };
 
@@ -162,7 +160,7 @@ pub async fn create(
             unit_price.into(),  // ← dari parameter
             service_fee.into(), // ← dari parameter
             total_price.into(), // ← dari parameter
-            sea_query::Expr::cust("'PAID'::order_status").into(),
+            sea_query::Expr::cust("'PAID'::order_status"),
             serde_json::to_value(req.shipping_address).unwrap().into(),
             req.note_to_jastiper.unwrap_or_default().into(),
             now.into(),

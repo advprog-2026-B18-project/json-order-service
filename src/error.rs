@@ -9,6 +9,7 @@ use thiserror::Error;
 pub type Result<T> = std::result::Result<T, AppError>;
 
 #[derive(Debug, Error)]
+#[allow(dead_code)]
 pub enum AppError {
     // ── 400 ──
     #[error("Validation error: {0}")]

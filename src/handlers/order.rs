@@ -9,7 +9,6 @@ use sqlx::PgPool;
 use std::sync::Arc;
 use uuid::Uuid;
 
-use utoipa::ToSchema;
 use validator::Validate;
 
 pub(crate) async fn reserve_stock(

@@ -1,4 +1,3 @@
-use crate::handlers::order::deduct_wallet;
 use serde_json::json;
 use serial_test::serial;
 use wiremock::matchers::{method, path, path_regex};
