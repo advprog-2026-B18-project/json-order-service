@@ -224,11 +224,7 @@ pub async fn checkout(
         service_fee,
         total_price,
     )
-    .await
-    .map_err(|e| {
-        // TODO: async rollback (release stock + refund wallet) bisa dilakukan di sini
-        e
-    })?;
+    .await?;
 
     Ok((
         StatusCode::CREATED,
