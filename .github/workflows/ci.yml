@@ -107,7 +107,7 @@ jobs:
           INTERNAL_SERVICE_KEY: test-key
         run: |
           cargo tarpaulin \
-            --out Lcov \
+            --out Xml \
             --output-dir coverage \
             --exclude-files "src/main.rs" \
             --timeout 180 \
@@ -117,7 +117,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: coverage-report
-          path: coverage/lcov.info
+          path: coverage/cobertura.xml
 
   # ─────────────────────────────────────────────
   # 3. SONARCLOUD — Static analysis
@@ -158,7 +158,7 @@ jobs:
           args: >
             -Dsonar.organization=advprog-2026-b18-project
             -Dsonar.projectKey=advprog-2026-B18-project_json-order-service
-            -Dsonar.coverageReportPaths=coverage/lcov.info
+            -Dsonar.coverageReportPaths=coverage/cobertura.xml
 
   # ─────────────────────────────────────────────
   # 4. BUILD — Docker image
