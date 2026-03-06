@@ -101,9 +101,6 @@ jobs:
       - name: Install cargo-tarpaulin
         run: cargo install cargo-tarpaulin
 
-      - name: Check coverage file
-        run: cat coverage/cobertura.xml
-
       - name: Run tests with coverage
         env:
           DATABASE_URL: postgres://postgres:postgres@localhost:5432/order_service_test
@@ -146,12 +143,6 @@ jobs:
           name: clippy-report
           path: .
 
-      - name: Download coverage report
-        uses: actions/download-artifact@v4
-        with:
-          name: coverage-report
-          path: coverage
-
       - name: SonarCloud Scan
         uses: SonarSource/sonarcloud-github-action@master
         env:
@@ -161,7 +152,6 @@ jobs:
           args: >
             -Dsonar.organization=advprog-2026-b18-project
             -Dsonar.projectKey=advprog-2026-B18-project_json-order-service
-            -Dsonar.coverageReportPaths=coverage/cobertura.xml
 
   # ─────────────────────────────────────────────
   # 4. BUILD — Docker image
