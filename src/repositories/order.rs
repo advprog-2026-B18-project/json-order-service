@@ -120,7 +120,7 @@ pub async fn create(
     pool: &PgPool,
     titipers_id: Uuid,
     jastiper_id: Uuid,
-    order_id: Uuid,
+    _order_id: Uuid,
     req: CreateOrderRequest,
     product_snapshot: serde_json::Value, // ← snapshot diterima dari handler
     unit_price: i64,
