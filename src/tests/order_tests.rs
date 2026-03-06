@@ -122,7 +122,8 @@ async fn test_checkout_success() {
     assert_eq!(order.quantity, 1);
     assert_eq!(order.unit_price, 100000i64);
 
-    sqlx::query(r#"DELETE FROM "order" WHERE order_id = $1"#, order.order_id)
+    sqlx::query(r#"DELETE FROM "order" WHERE order_id = $1"#)
+        .bind(order.order_id)
         .execute(&*pool)
         .await
         .unwrap();
