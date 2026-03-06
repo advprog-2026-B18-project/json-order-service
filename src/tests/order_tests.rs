@@ -67,7 +67,12 @@ async fn test_checkout_success() {
     }
 
     let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL harus diset");
-    let pool = sqlx::PgPool::connect(&database_url).await.unwrap();
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(5)
+        .acquire_timeout(std::time::Duration::from_secs(30))
+        .connect(&database_url)
+        .await
+        .expect("Gagal koneksi ke DB");
 
     let req = json!({
         "product_id": "550e8400-e29b-41d4-a716-446655440000",
