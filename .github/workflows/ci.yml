@@ -80,11 +80,6 @@ jobs:
       - name: Install sqlx-cli
         run: cargo install sqlx-cli --no-default-features --features postgres
 
-      - name: Run migrations
-        env:
-          DATABASE_URL: postgres://postgres:postgres@localhost:5432/order_service_test
-        run: sqlx migrate run
-
       - name: Run tests with coverage
         env:
           DATABASE_URL: postgres://postgres:postgres@localhost:5432/order_service_test
