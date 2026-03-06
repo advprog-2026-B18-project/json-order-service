@@ -1,7 +1,4 @@
-use axum::{
-    extract::FromRequestParts,
-    http::{request::Parts},
-};
+use axum::{extract::FromRequestParts, http::request::Parts};
 use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
