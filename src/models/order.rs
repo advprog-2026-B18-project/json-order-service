@@ -66,6 +66,23 @@ pub enum CancelledBy {
     Admin,
 }
 
+impl CancelledBy {
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s {
+            "JASTIPER" => Some(CancelledBy::Jastiper),
+            "ADMIN" => Some(CancelledBy::Admin),
+            _ => None,
+        }
+    }
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            CancelledBy::Jastiper => "JASTIPER",
+            CancelledBy::Admin => "ADMIN",
+        }
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone, ToSchema)]
 pub struct ProductSnapshot {
     pub product_id: Uuid,
@@ -144,7 +161,7 @@ pub struct Order {
     pub tracking_number: Option<String>, // diisi saat SHIPPED
     pub courier: Option<String>,         // diisi saat SHIPPED
     pub cancellation_reason: Option<String>,
-    pub cancelled_by: Option<CancelledBy>, // cancelled_by_enum
+    pub cancelled_by: Option<String>, // cancelled_by_enum
     pub completed_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
