@@ -1,6 +1,9 @@
 use crate::error::AppError;
 use crate::middleware::auth::JwtClaims;
-use crate::models::order::{CreateOrderRequest, OrderFilter, PaginationParams};
+use crate::models::order::{
+    CancelRequest, CancelledBy, CreateOrderRequest, OrderFilter, OrderStatus, PaginationParams,
+    UpdateStatusRequest,
+};
 use crate::repositories::order as repo;
 use axum::Json;
 use axum::extract::{Path, Query, State};
@@ -9,38 +12,55 @@ use serde_json::json;
 use sqlx::PgPool;
 use std::sync::Arc;
 use uuid::Uuid;
-
 use validator::Validate;
 
-pub(crate) async fn reserve_stock(
+fn inventory_url() -> String {
+    std::env::var("INVENTORY_SERVICE_URL").unwrap_or_else(|_| "http://localhost:8081".to_string())
+}
+
+fn wallet_url() -> String {
+    std::env::var("WALLET_SERVICE_URL").unwrap_or_else(|_| "http://localhost:8082".to_string())
+}
+
+fn service_key() -> String {
+    std::env::var("INTERNAL_SERVICE_KEY").expect("INTERNAL_SERVICE_KEY harus diset di .env")
+}
+
+async fn internal_post(url: &str, body: serde_json::Value) -> Result<u16, AppError> {
+    let status = reqwest::Client::new()
+        .post(url)
+        .header("X-Service-Key", service_key())
+        .json(&body)
+        .send()
+        .await
+        .map_err(|_| AppError::Internal)?
+        .status()
+        .as_u16();
+    Ok(status)
+}
+
+enum StockAction {
+    Reserve,
+    Release,
+}
+
+async fn manage_stock(
+    action: StockAction,
     product_id: Uuid,
     order_id: Uuid,
     quantity: i32,
 ) -> Result<(), AppError> {
-    let inventory_url = std::env::var("INVENTORY_SERVICE_URL")
-        .unwrap_or_else(|_| "http://localhost:8081".to_string());
-
-    let service_key =
-        std::env::var("INTERNAL_SERVICE_KEY").expect("INTERNAL_SERVICE_KEY harus diset di .env");
-
+    let suffix = match action {
+        StockAction::Reserve => "reserve",
+        StockAction::Release => "release",
+    };
     let url = format!(
-        "{}/internal/products/{}/stock/reserve",
-        inventory_url, product_id
+        "{}/internal/products/{}/stock/{}",
+        inventory_url(),
+        product_id,
+        suffix
     );
-
-    let client = reqwest::Client::new();
-    let response = client
-        .post(&url)
-        .header("X-Service-Key", service_key)
-        .json(&serde_json::json!({
-            "order_id": order_id,
-            "quantity": quantity,
-        }))
-        .send()
-        .await
-        .map_err(|_| AppError::Internal)?;
-
-    match response.status().as_u16() {
+    match internal_post(&url, json!({ "order_id": order_id, "quantity": quantity })).await? {
         200 => Ok(()),
         404 => Err(AppError::NotFound("Produk tidak ditemukan".to_string())),
         409 => Err(AppError::Conflict("Stok tidak mencukupi".to_string())),
@@ -51,42 +71,56 @@ pub(crate) async fn reserve_stock(
     }
 }
 
+pub(crate) async fn reserve_stock(
+    product_id: Uuid,
+    order_id: Uuid,
+    quantity: i32,
+) -> Result<(), AppError> {
+    manage_stock(StockAction::Reserve, product_id, order_id, quantity).await
+}
+
 pub(crate) async fn release_stock(
     product_id: Uuid,
     order_id: Uuid,
     quantity: i32,
 ) -> Result<(), AppError> {
-    let inventory_url = std::env::var("INVENTORY_SERVICE_URL")
-        .unwrap_or_else(|_| "http://localhost:8081".to_string());
+    manage_stock(StockAction::Release, product_id, order_id, quantity).await
+}
 
-    let service_key =
-        std::env::var("INTERNAL_SERVICE_KEY").expect("INTERNAL_SERVICE_KEY harus diset di .env");
+enum WalletAction {
+    Deduct,
+    Refund,
+}
 
-    let url = format!(
-        "{}/internal/products/{}/stock/release",
-        inventory_url, product_id
-    );
+async fn manage_wallet(
+    action: WalletAction,
+    user_id: Uuid,
+    order_id: Uuid,
+    amount: i64,
+    description: &str,
+) -> Result<(), AppError> {
+    let endpoint = match action {
+        WalletAction::Deduct => "deduct",
+        WalletAction::Refund => "refund",
+    };
+    let url = format!("{}/internal/wallets/{}", wallet_url(), endpoint);
+    let body = json!({
+        "user_id":     user_id,
+        "order_id":    order_id,
+        "amount":      amount,
+        "description": description,
+    });
 
-    let client = reqwest::Client::new();
-    let response = client
-        .post(&url)
-        .header("X-Service-Key", service_key)
-        .json(&serde_json::json!({
-            "order_id": order_id,
-            "quantity": quantity,
-        }))
-        .send()
-        .await
-        .map_err(|_| AppError::Internal)?;
-
-    match response.status().as_u16() {
-        200 => Ok(()),
-        404 => Err(AppError::NotFound("Produk tidak ditemukan".to_string())),
-        409 => Err(AppError::Conflict("Stok tidak mencukupi".to_string())),
-        422 => Err(AppError::UnprocessableEntity(
-            "Produk tidak dalam status ACTIVE".to_string(),
+    match (action, internal_post(&url, body).await?) {
+        (WalletAction::Deduct, 200) => Ok(()),
+        (WalletAction::Deduct, 404) => Err(AppError::NotFound("User tidak ditemukan".to_string())),
+        (WalletAction::Deduct, 409) => Ok(()), // idempotent
+        (WalletAction::Deduct, 422) => Err(AppError::UnprocessableEntity(
+            "Saldo tidak mencukupi".to_string(),
         )),
-        _ => Err(AppError::Internal),
+        (WalletAction::Deduct, _) => Err(AppError::Internal),
+        (WalletAction::Refund, 200) | (WalletAction::Refund, 409) => Ok(()), // 409 = sudah direfund
+        (WalletAction::Refund, _) => Err(AppError::Internal),
     }
 }
 
@@ -96,45 +130,27 @@ pub(crate) async fn deduct_wallet(
     amount: i64,
     description: &str,
 ) -> Result<(), AppError> {
-    let wallet_url =
-        std::env::var("WALLET_SERVICE_URL").unwrap_or_else(|_| "http://localhost:8082".to_string());
+    manage_wallet(WalletAction::Deduct, user_id, order_id, amount, description).await
+}
 
-    let service_key =
-        std::env::var("INTERNAL_SERVICE_KEY").expect("INTERNAL_SERVICE_KEY harus diset di .env");
-
-    let client = reqwest::Client::new();
-    let response = client
-        .post(format!("{}/internal/wallets/deduct", wallet_url))
-        .header("X-Service-Key", service_key)
-        .json(&serde_json::json!({
-            "user_id":     user_id,
-            "order_id":    order_id,
-            "amount":      amount,
-            "description": description,
-        }))
-        .send()
-        .await
-        .map_err(|_| AppError::Internal)?;
-
-    match response.status().as_u16() {
-        200 => Ok(()),
-        404 => Err(AppError::NotFound("User tidak ditemukan".to_string())),
-        // 409 = sudah diproses (idempotent), anggap sukses
-        409 => Ok(()),
-        422 => Err(AppError::UnprocessableEntity(
-            "Saldo tidak mencukupi".to_string(),
-        )),
-        _ => Err(AppError::Internal),
-    }
+pub(crate) async fn refund_wallet(
+    user_id: Uuid,
+    order_id: Uuid,
+    amount: i64,
+    description: &str,
+) -> Result<(), AppError> {
+    manage_wallet(WalletAction::Refund, user_id, order_id, amount, description).await
 }
 
 pub(crate) async fn fetch_product(product_id: Uuid) -> Result<serde_json::Value, AppError> {
-    let inventory_url = std::env::var("INVENTORY_SERVICE_URL")
-        .unwrap_or_else(|_| "http://localhost:8083".to_string());
-
-    let client = reqwest::Client::new();
-    let response = client
-        .get(format!("{}/products/{}", inventory_url, product_id))
+    let url = format!(
+        "{}/products/{}",
+        std::env::var("INVENTORY_SERVICE_URL")
+            .unwrap_or_else(|_| "http://localhost:8083".to_string()),
+        product_id
+    );
+    let response = reqwest::Client::new()
+        .get(&url)
         .send()
         .await
         .map_err(|_| AppError::Internal)?;
@@ -152,13 +168,52 @@ pub(crate) async fn fetch_product(product_id: Uuid) -> Result<serde_json::Value,
     }
 }
 
-// --- POST /orders ---
+fn paginated_response(
+    message: &str,
+    orders: impl serde::Serialize,
+    total_count: i64,
+    page: Option<i64>,
+    limit: Option<i64>,
+) -> serde_json::Value {
+    let page = page.unwrap_or(1);
+    let limit = limit.unwrap_or(20);
+    json!({
+        "success": true,
+        "message": message,
+        "data":    orders,
+        "pagination": {
+            "total_items": total_count,
+            "page":        page,
+            "limit":       limit,
+            "total_pages": (total_count as f64 / limit as f64).ceil() as i64,
+        }
+    })
+}
+
+async fn fetch_order_with_access_check(
+    pool: &PgPool,
+    order_id: Uuid,
+    requester_id: Uuid,
+) -> Result<crate::models::order::Order, AppError> {
+    let order = repo::find_by_id(pool, order_id)
+        .await?
+        .ok_or_else(|| AppError::NotFound("Pesanan tidak ditemukan".to_string()))?;
+
+    if order.titipers_id != requester_id && order.jastiper_id != requester_id {
+        return Err(AppError::Forbidden(
+            "Anda tidak memiliki akses ke pesanan ini".to_string(),
+        ));
+    }
+    Ok(order)
+}
+
+/// POST /orders
 #[utoipa::path(
     post, path = "/orders",
     tag = "Orders",
     request_body = CreateOrderRequest,
     responses(
-        (status=201, description="Pesanan berhasil dibuat", body=Order),
+        (status=201, description="Pesanan berhasil dibuat",        body=Order),
         (status=400, description="Data tidak valid"),
         (status=401, description="Token tidak valid atau tidak ada"),
         (status=403, description="Jastiper mencoba beli produk sendiri"),
@@ -168,22 +223,19 @@ pub(crate) async fn fetch_product(product_id: Uuid) -> Result<serde_json::Value,
 )]
 pub async fn checkout(
     State(pool): State<Arc<PgPool>>,
-    claims: JwtClaims, // ← ekstrak dari Bearer token
+    claims: JwtClaims,
     Json(req): Json<CreateOrderRequest>,
 ) -> Result<(StatusCode, Json<serde_json::Value>), AppError> {
     req.validate()
         .map_err(|e| AppError::Validation(e.to_string()))?;
 
-    // Identitas titipers dari JWT (sub = accountId)
     let titipers_id = claims.user_id()?;
     let order_id = Uuid::new_v4();
 
     let product = fetch_product(req.product_id).await?;
-
     let jastiper_id: Uuid =
         serde_json::from_value(product["jastiper_id"].clone()).map_err(|_| AppError::Internal)?;
 
-    // Titipers tidak boleh membeli produknya sendiri
     if titipers_id == jastiper_id {
         return Err(AppError::Forbidden(
             "Jastiper tidak dapat membeli produk milik sendiri".to_string(),
@@ -205,15 +257,20 @@ pub async fn checkout(
         "service_fee":    service_fee,
     });
 
+    // 1. Reserve stok
     reserve_stock(req.product_id, order_id, req.quantity).await?;
 
+    // 2. Deduct wallet — rollback stok jika gagal
     let description = format!("Pembayaran Order #{}", order_id);
     if let Err(e) = deduct_wallet(titipers_id, order_id, total_price, &description).await {
         let _ = release_stock(req.product_id, order_id, req.quantity).await;
         return Err(e);
     }
 
-    let order = repo::create(
+    // 3. Simpan ke DB — rollback stok + refund wallet jika gagal
+    let product_id = req.product_id;
+    let quantity = req.quantity;
+    match repo::create(
         &pool,
         titipers_id,
         jastiper_id,
@@ -224,19 +281,22 @@ pub async fn checkout(
         service_fee,
         total_price,
     )
-    .await?;
-
-    Ok((
-        StatusCode::CREATED,
-        Json(json!({
-            "success": true,
-            "message": "Pesanan berhasil dibuat",
-            "data": order
-        })),
-    ))
+    .await
+    {
+        Ok(order) => Ok((
+            StatusCode::CREATED,
+            Json(json!({ "success": true, "message": "Pesanan berhasil dibuat", "data": order })),
+        )),
+        Err(e) => {
+            let _ = release_stock(product_id, order_id, quantity).await;
+            let refund_desc = format!("Refund Order #{} - gagal menyimpan pesanan", order_id);
+            let _ = refund_wallet(titipers_id, order_id, total_price, &refund_desc).await;
+            Err(e)
+        }
+    }
 }
 
-// --- GET /orders/{order_id} ---
+/// GET /orders/{order_id}
 #[utoipa::path(
     get, path = "/orders/{order_id}",
     tag = "Orders",
@@ -254,36 +314,217 @@ pub async fn get_order(
     Path(order_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let requester_id = claims.user_id()?;
+    let order = fetch_order_with_access_check(&pool, order_id, requester_id).await?;
+    Ok(Json(
+        json!({ "success": true, "message": "OK", "data": order }),
+    ))
+}
+
+/// GET /orders/{order_id}/history
+#[utoipa::path(
+    get, path = "/orders/{order_id}/history",
+    tag = "Orders",
+    params(("order_id" = Uuid, Path, description = "ID unik pesanan")),
+    responses(
+        (status=200, description="Riwayat status pesanan"),
+        (status=401, description="Token tidak valid atau tidak ada"),
+        (status=403, description="Bukan pesanan milik user ini"),
+        (status=404, description="Pesanan tidak ditemukan"),
+    )
+)]
+pub async fn get_order_history(
+    State(pool): State<Arc<PgPool>>,
+    claims: JwtClaims,
+    Path(order_id): Path<Uuid>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let requester_id = claims.user_id()?;
+    fetch_order_with_access_check(&pool, order_id, requester_id).await?;
+
+    let history = repo::get_status_history(&pool, order_id).await?;
+    Ok(Json(
+        json!({ "success": true, "message": "Riwayat status ditemukan", "data": history }),
+    ))
+}
+
+/// PATCH /orders/{order_id}/status
+#[utoipa::path(
+    patch, path = "/orders/{order_id}/status",
+    tag = "Orders",
+    params(("order_id" = Uuid, Path, description = "ID unik pesanan")),
+    request_body = UpdateStatusRequest,
+    responses(
+        (status=200, description="Status berhasil diperbarui",     body=Order),
+        (status=400, description="Data tidak valid"),
+        (status=401, description="Token tidak valid atau tidak ada"),
+        (status=403, description="Tidak punya izin mengubah status ini"),
+        (status=404, description="Pesanan tidak ditemukan"),
+        (status=422, description="Transisi status tidak valid"),
+    )
+)]
+pub async fn update_status(
+    State(pool): State<Arc<PgPool>>,
+    claims: JwtClaims,
+    Path(order_id): Path<Uuid>,
+    Json(req): Json<UpdateStatusRequest>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let requester_id = claims.user_id()?;
+    let role = &claims.role;
 
     let order = repo::find_by_id(&pool, order_id)
         .await?
         .ok_or_else(|| AppError::NotFound("Pesanan tidak ditemukan".to_string()))?;
 
-    // Hanya titipers atau jastiper yang terlibat yang boleh melihat
-    if order.titipers_id != requester_id && order.jastiper_id != requester_id {
-        return Err(AppError::Forbidden(
-            "Anda tidak memiliki akses ke pesanan ini".to_string(),
-        ));
+    match (&req.status, role.as_str()) {
+        // Jastiper: PAID → PURCHASED, PURCHASED → SHIPPED
+        (OrderStatus::Purchased, "JASTIPER") | (OrderStatus::Shipped, "JASTIPER") => {
+            if order.jastiper_id != requester_id {
+                return Err(AppError::Forbidden(
+                    "Hanya jastiper pemilik produk yang dapat mengubah status ini".to_string(),
+                ));
+            }
+        }
+        // Titipers: SHIPPED → COMPLETED
+        (OrderStatus::Completed, "TITIPERS") => {
+            if order.titipers_id != requester_id {
+                return Err(AppError::Forbidden(
+                    "Hanya titipers pemilik order yang dapat mengkonfirmasi penerimaan".to_string(),
+                ));
+            }
+        }
+        // Admin boleh semua transisi
+        (_, "ADMIN") => {}
+        _ => {
+            return Err(AppError::Forbidden(
+                "Role Anda tidak memiliki izin untuk transisi status ini".to_string(),
+            ));
+        }
     }
 
-    Ok(Json(
-        json!({"success": true, "message": "OK", "data": order}),
-    ))
+    let updated = repo::update_status(
+        &pool,
+        order_id,
+        &req.status,
+        &requester_id.to_string(),
+        &role.to_uppercase(),
+        req.notes.as_deref(),
+        req.tracking_number.as_deref(),
+        req.courier.as_deref(),
+    )
+    .await?;
+
+    Ok(Json(json!({
+        "success": true,
+        "message": "Status pesanan berhasil diperbarui",
+        "data": updated
+    })))
 }
 
-// --- GET /orders/my/purchases ---
+/// POST /orders/{order_id}/cancel
 #[utoipa::path(
-    get,
-    path = "/orders/my/purchases",
+    post, path = "/orders/{order_id}/cancel",
+    tag = "Orders",
+    params(("order_id" = Uuid, Path, description = "ID unik pesanan")),
+    request_body = CancelRequest,
+    responses(
+        (status=200, description="Pesanan berhasil dibatalkan",    body=Order),
+        (status=400, description="Data tidak valid"),
+        (status=401, description="Token tidak valid atau tidak ada"),
+        (status=403, description="Tidak punya izin membatalkan pesanan ini"),
+        (status=404, description="Pesanan tidak ditemukan"),
+        (status=422, description="Pesanan tidak dapat dibatalkan pada status ini"),
+    )
+)]
+pub async fn cancel_order(
+    State(pool): State<Arc<PgPool>>,
+    claims: JwtClaims,
+    Path(order_id): Path<Uuid>,
+    Json(req): Json<CancelRequest>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    req.validate()
+        .map_err(|e| AppError::Validation(e.to_string()))?;
+
+    let requester_id = claims.user_id()?;
+    let role = &claims.role;
+
+    let order = repo::find_by_id(&pool, order_id)
+        .await?
+        .ok_or_else(|| AppError::NotFound("Pesanan tidak ditemukan".to_string()))?;
+
+    let (cancelled_by, actor_role) = match role.as_str() {
+        "TITIPERS" => {
+            if order.titipers_id != requester_id {
+                return Err(AppError::Forbidden(
+                    "Hanya titipers pemilik order yang dapat membatalkan".to_string(),
+                ));
+            }
+            if order.status != OrderStatus::Paid {
+                return Err(AppError::UnprocessableEntity(
+                    "Titipers hanya dapat membatalkan pesanan dengan status PAID".to_string(),
+                ));
+            }
+            (CancelledBy::Jastiper, "TITIPERS")
+        }
+        "JASTIPER" => {
+            if order.jastiper_id != requester_id {
+                return Err(AppError::Forbidden(
+                    "Hanya jastiper pemilik produk yang dapat membatalkan".to_string(),
+                ));
+            }
+            (CancelledBy::Jastiper, "JASTIPER")
+        }
+        "ADMIN" => (CancelledBy::Admin, "ADMIN"),
+        _ => {
+            return Err(AppError::Forbidden(
+                "Role Anda tidak memiliki izin membatalkan pesanan".to_string(),
+            ));
+        }
+    };
+
+    let updated = repo::cancel_order(
+        &pool,
+        order_id,
+        &req.cancellation_reason,
+        &cancelled_by,
+        &requester_id.to_string(),
+        actor_role,
+        req.notes.as_deref(),
+    )
+    .await?;
+
+    // Kompensasi: kembalikan stok
+    let product_id: Uuid = serde_json::from_value(updated.product_snapshot["product_id"].clone())
+        .unwrap_or(updated.product_id);
+    let _ = release_stock(product_id, order_id, updated.quantity).await;
+
+    // Kompensasi: refund saldo ke titipers
+    let refund_desc = format!("Refund Order #{} - pesanan dibatalkan", order_id);
+    let _ = refund_wallet(
+        updated.titipers_id,
+        order_id,
+        updated.total_price,
+        &refund_desc,
+    )
+    .await;
+
+    Ok(Json(json!({
+        "success": true,
+        "message": "Pesanan berhasil dibatalkan",
+        "data": updated
+    })))
+}
+
+/// GET /orders/my/purchases
+#[utoipa::path(
+    get, path = "/orders/my/purchases",
     tag = "Orders",
     params(
-        ("page" = Option<i64>, Query, description = "Halaman (default: 1)"),
+        ("page"  = Option<i64>, Query, description = "Halaman (default: 1)"),
         ("limit" = Option<i64>, Query, description = "Item per halaman (default: 20)")
     ),
     responses(
-        (status = 200, description = "Berhasil", body = serde_json::Value),
-        (status = 401, description = "Token tidak valid atau tidak ada"),
-        (status = 500, description = "Internal server error")
+        (status=200, description="Berhasil",                       body=serde_json::Value),
+        (status=401, description="Token tidak valid atau tidak ada"),
+        (status=500, description="Internal server error")
     )
 )]
 pub async fn my_purchases(
@@ -292,40 +533,32 @@ pub async fn my_purchases(
     Query(params): Query<PaginationParams>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let titipers_id = claims.user_id()?;
-
     let filter = Some(OrderFilter {
         titipers_id: Some(titipers_id),
         ..Default::default()
     });
-
     let (orders, total_count) = repo::find_all(&pool, filter, params.page, params.limit).await?;
-
-    Ok(Json(json!({
-        "success": true,
-        "message": "Riwayat belanja ditemukan",
-        "data": orders,
-        "pagination": {
-            "total_items": total_count,
-            "page": params.page.unwrap_or(1),
-            "limit": params.limit.unwrap_or(20),
-            "total_pages": (total_count as f64 / params.limit.unwrap_or(20) as f64).ceil() as i64
-        }
-    })))
+    Ok(Json(paginated_response(
+        "Riwayat belanja ditemukan",
+        orders,
+        total_count,
+        params.page,
+        params.limit,
+    )))
 }
 
-// --- GET /orders/my/sales ---
+/// GET /orders/my/sales
 #[utoipa::path(
-    get,
-    path = "/orders/my/sales",
+    get, path = "/orders/my/sales",
     tag = "Orders",
     params(
-        ("page" = Option<i64>, Query, description = "Halaman"),
+        ("page"  = Option<i64>, Query, description = "Halaman"),
         ("limit" = Option<i64>, Query, description = "Limit")
     ),
     responses(
-        (status = 200, description = "Berhasil", body = serde_json::Value),
-        (status = 401, description = "Token tidak valid atau tidak ada"),
-        (status = 500, description = "Internal server error")
+        (status=200, description="Berhasil",                       body=serde_json::Value),
+        (status=401, description="Token tidak valid atau tidak ada"),
+        (status=500, description="Internal server error")
     )
 )]
 pub async fn my_sales(
@@ -334,23 +567,16 @@ pub async fn my_sales(
     Query(params): Query<PaginationParams>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let jastiper_id = claims.user_id()?;
-
     let filter = Some(OrderFilter {
         jastiper_id: Some(jastiper_id),
         ..Default::default()
     });
-
     let (orders, total_count) = repo::find_all(&pool, filter, params.page, params.limit).await?;
-
-    Ok(Json(json!({
-        "success": true,
-        "message": "Daftar pesanan masuk ditemukan",
-        "data": orders,
-        "pagination": {
-            "total_items": total_count,
-            "page": params.page.unwrap_or(1),
-            "limit": params.limit.unwrap_or(20),
-            "total_pages": (total_count as f64 / params.limit.unwrap_or(20) as f64).ceil() as i64
-        }
-    })))
+    Ok(Json(paginated_response(
+        "Daftar pesanan masuk ditemukan",
+        orders,
+        total_count,
+        params.page,
+        params.limit,
+    )))
 }
