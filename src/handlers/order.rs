@@ -179,9 +179,9 @@ pub async fn checkout(
 
     let jastiper_id: Uuid =
         serde_json::from_value(product["jastiper_id"].clone()).map_err(|_| AppError::Internal)?;
-    let unit_price = product["price"].as_i64().unwrap_or(0) as i32;
-    let service_fee = product["service_fee"].as_i64().unwrap_or(0) as i32;
-    let total_price = (unit_price + service_fee) * req.quantity;
+    let unit_price = product["price"].as_i64().unwrap_or(0);
+    let service_fee = product["service_fee"].as_i64().unwrap_or(0);
+    let total_price = (unit_price + service_fee) * req.quantity as i64;
 
     let product_snapshot = json!({
         "product_id":     req.product_id,
@@ -197,7 +197,7 @@ pub async fn checkout(
     reserve_stock(req.product_id, order_id, req.quantity).await?;
 
     let description = format!("Pembayaran Order #{}", order_id);
-    if let Err(e) = deduct_wallet(titipers_id, order_id, total_price as i64, &description).await {
+    if let Err(e) = deduct_wallet(titipers_id, order_id, total_price, &description).await {
         let _ = release_stock(req.product_id, order_id, req.quantity).await;
         return Err(e);
     }
