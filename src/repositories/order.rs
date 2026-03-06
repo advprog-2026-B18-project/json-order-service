@@ -1,5 +1,5 @@
 use chrono::Utc;
-use sea_query::{Expr};
+use sea_query::Expr;
 use sea_query::{PostgresQueryBuilder, Query};
 use sea_query_binder::SqlxBinder;
 use sqlx::PgPool;
@@ -7,9 +7,7 @@ use uuid::Uuid;
 
 use crate::{
     error::{AppError, Result},
-    models::order::{
-        CreateOrderRequest, Order, OrderFilter, OrderIden,
-    },
+    models::order::{CreateOrderRequest, Order, OrderFilter, OrderIden},
 };
 
 pub async fn find_all(
