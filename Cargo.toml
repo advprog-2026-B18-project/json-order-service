@@ -5,10 +5,10 @@ edition = "2024"
 
 [dependencies]
 # Web
-axum         = "0.8"
+axum         = "0.7"
 axum-extra   = { version = "0.9", features = ["cookie", "typed-header"] }
 tokio        = { version = "1", features = ["full"] }
-tower-http   = { version = "0.6", features = ["cors", "trace"] }
+tower-http   = { version = "0.5", features = ["cors", "trace"] }
 
 # Database — Neon DB (wajib TLS)
 sqlx = { version = "0.8", features = [
@@ -17,14 +17,14 @@ sqlx = { version = "0.8", features = [
 ] }
 
 # Query builder
-sea-query = { version = "0.31", features = [
+sea-query = { version = "0.32.0", features = [
     "backend-postgres",
     "with-uuid",
     "with-chrono",
-    "with-json"
+    "with-json",
 ] }
 sea-query-binder = { version = "0.7", features = [
-    "sqlx-postgres",  # Ini tetap karena sea-query-binder punya fitur sqlx-postgres
+    "sqlx-postgres",
     "with-uuid",
     "with-chrono",
     "with-json"
@@ -32,7 +32,8 @@ sea-query-binder = { version = "0.7", features = [
 
 # Swagger / OpenAPI
 utoipa            = { version = "4", features = ["axum_extras","uuid","chrono"] }
-utoipa-swagger-ui = { version = "7", features = ["axum"] }
+#utoipa-swagger-ui = { version = "8", features = ["axum"] }
+utoipa-scalar = { version = "0.1", features = ["axum"] }
 
 # Serialisasi
 serde      = { version = "1", features = ["derive"] }
@@ -52,4 +53,12 @@ argon2       = "0.5.3"
 
 # Validasi
 validator = { version = "0.18", features = ["derive"] }
+repo = "0.14.6"
 
+# Client Request
+reqwest = { version = "0.12", features = ["json"] }
+wiremock = "0.6.5"
+
+[dev-dependencies]
+# Srialisasi
+serial_test = "3"
