@@ -7,9 +7,7 @@ use uuid::Uuid;
 
 use crate::{
     error::{AppError, Result},
-    models::order::{
-        CancelledBy, CreateOrderRequest, Order, OrderFilter, OrderIden, OrderStatus,
-    },
+    models::order::{CancelledBy, CreateOrderRequest, Order, OrderFilter, OrderIden, OrderStatus},
 };
 
 pub async fn find_all(
