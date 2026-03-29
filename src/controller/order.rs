@@ -63,13 +63,14 @@ pub async fn my_purchases(
 
     let (orders, total) =
         svc::my_purchases(&pool, claims.user_id()?, params).await?;
+
     Ok(Json(paginated_response(
         "Riwayat belanja ditemukan", orders, total,
         page, limit,
     )))
 }
 
-/// GET /orders/my/sales
+// GET /orders/my/sales
 pub async fn my_sales(
     State(pool): State<Arc<PgPool>>,
     claims: JwtClaims,
@@ -80,23 +81,25 @@ pub async fn my_sales(
 
     let (orders, total) =
         svc::my_sales(&pool, claims.user_id()?, params).await?;
+
     Ok(Json(paginated_response(
         "Daftar pesanan masuk ditemukan", orders, total,
         page, limit,
     )))
 }
 
-/// GET /orders/{order_id}
+// GET /orders/{order_id}
 pub async fn get_order(
     State(pool): State<Arc<PgPool>>,
     claims: JwtClaims,
     Path(order_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let order = svc::get_order(&pool, order_id, claims.user_id()?).await?;
+
     Ok(Json(json!({ "success": true, "message": "OK", "data": order })))
 }
 
-/// GET /orders/{order_id}/history
+// GET /orders/{order_id}/history
 pub async fn get_order_history(
     State(pool): State<Arc<PgPool>>,
     claims: JwtClaims,
@@ -104,6 +107,7 @@ pub async fn get_order_history(
 ) -> Result<Json<serde_json::Value>, AppError> {
     let history =
         svc::get_order_history(&pool, order_id, claims.user_id()?).await?;
+
     Ok(Json(json!({
         "success": true,
         "message": "Riwayat ditemukan",
@@ -111,7 +115,7 @@ pub async fn get_order_history(
     })))
 }
 
-/// PATCH /orders/{order_id}/status
+// PATCH /orders/{order_id}/status
 pub async fn update_status(
     State(pool): State<Arc<PgPool>>,
     claims: JwtClaims,
@@ -121,6 +125,7 @@ pub async fn update_status(
     let updated = svc::update_status(
         &pool, order_id, claims.user_id()?, &claims.role, req,
     ).await?;
+
     Ok(Json(json!({
         "success": true,
         "message": "Status berhasil diperbarui",
@@ -128,7 +133,7 @@ pub async fn update_status(
     })))
 }
 
-/// POST /orders/{order_id}/cancel
+// POST /orders/{order_id}/cancel
 pub async fn cancel_order(
     State(pool): State<Arc<PgPool>>,
     claims: JwtClaims,
@@ -136,6 +141,7 @@ pub async fn cancel_order(
     Json(req): Json<CancelRequest>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     req.validate().map_err(|e| AppError::Validation(e.to_string()))?;
+    
     let updated = svc::cancel_order(
         &pool, order_id, claims.user_id()?, &claims.role, req,
     ).await?;
