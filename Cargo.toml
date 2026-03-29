@@ -48,7 +48,7 @@ tracing     = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 # Auth
-jsonwebtoken = "9"
+jsonwebtoken = "8"
 argon2       = "0.5.3"
 
 # Validasi
@@ -58,6 +58,8 @@ repo = "0.14.6"
 # Client Request
 reqwest = { version = "0.12", features = ["json"] }
 wiremock = "0.6.5"
+base64 = "0.22.1"
+
 
 [dev-dependencies]
 # Srialisasi
