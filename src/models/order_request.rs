@@ -3,6 +3,7 @@ use utoipa::ToSchema;
 use uuid::Uuid;
 use validator::Validate;
 use crate::models::order_status_history::{OrderStatus};
+use crate::models::rating::Rating;
 use crate::models::shipping_address::ShippingAddress;
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -27,6 +28,8 @@ pub struct UpdateStatusRequest {
     pub tracking_number: Option<String>,
     /// Wajib diisi saat status = Shipped
     pub courier: Option<String>,
+    /// Sunnah diisi saat status = Completed
+    pub rating: Option<Rating>,
 }
 
 #[derive(Debug, Deserialize, ToSchema, Validate)]

@@ -74,7 +74,7 @@ pub async fn update_status(
         });
     }
 
-    let status_str = new_status.to_string(); // pakai Display trait, bukan format!("{:?}")
+    let status_str = new_status.to_string(); 
 
     let mut query = Query::update();
     query

@@ -9,6 +9,7 @@ use utoipa::ToSchema;
 #[derive(Debug, Serialize, Deserialize, sqlx::Type, Clone, PartialEq, ToSchema)]
 #[sqlx(type_name = "cancelled_by_enum", rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum CancelledBy {
+    Titipers ,
     Jastiper,
     Admin,
 }
@@ -16,6 +17,7 @@ pub enum CancelledBy {
 impl CancelledBy {
     pub fn as_str(&self) -> &'static str {
         match self {
+            CancelledBy::Titipers => "TITIPERS" ,
             CancelledBy::Jastiper => "JASTIPER",
             CancelledBy::Admin => "ADMIN",
         }
@@ -29,6 +31,7 @@ impl std::str::FromStr for CancelledBy {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
+            "TITPERS" => Ok(CancelledBy::Titipers),
             "JASTIPER" => Ok(CancelledBy::Jastiper),
             "ADMIN" => Ok(CancelledBy::Admin),
             _ => Err(format!("Nilai CancelledBy tidak valid: '{}'", s)),

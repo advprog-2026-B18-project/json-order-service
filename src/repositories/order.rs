@@ -203,6 +203,7 @@ pub async fn cancel_order(
     }
 
     let cancelled_by_str = match cancelled_by {
+        CancelledBy::Titipers => "TITIPERS",
         CancelledBy::Jastiper => "JASTIPER",
         CancelledBy::Admin => "ADMIN",
     };
