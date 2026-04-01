@@ -51,6 +51,10 @@ async fn main() {
         .route("/orders/{order_id}/rating/product",
                post(controller::rating_product::submit_rating_product))
 
+        // INTERNAL ROUTES
+        .route("/internal/orders/{order_id}/payment-info",
+               get(controller::internal::payment_info))
+
         .with_state(shared_pool);
 
     let app = Router::new().merge(api_router);

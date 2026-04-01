@@ -332,3 +332,12 @@ pub async fn my_sales(
     debug!("✅ [my_sales] found {} orders", result.0.len());
     Ok(result)
 }
+
+// ── internal method ──────────────────────────────────────────────────
+pub async fn get_order_internal(
+    pool: &PgPool,
+    order_id: Uuid,
+) -> Result<Order, AppError> {
+    repo::find_by_id(pool, order_id).await?
+        .ok_or_else(|| AppError::NotFound("Pesanan tidak ditemukan".to_string()))
+}
