@@ -175,3 +175,50 @@ pub(crate) async fn fetch_product(product_id: Uuid) -> Result<serde_json::Value,
         }
     }
 }
+
+pub(crate) async fn send_product_rating(
+    product_id: Uuid,
+    order_id: Uuid,
+    rating: f64,
+    review: Option<&str>,
+    product_images: &[String],
+) -> Result<(), AppError> {
+    let url = format!(
+        "{}/internal/products/{}/post-order",
+        inventory_url(),
+        product_id,
+    );
+
+    let payload = json!({
+        "order_id":       order_id,
+        "action":         "CONFIRM",
+        "rating":         rating,
+        "review":         review,
+        "product_images": product_images,
+    });
+
+    debug!("📦 [inventory] send_product_rating → POST {}", url);
+    debug!("📦 [inventory] payload: product_id={} order_id={} rating={}", product_id, order_id, rating);
+
+    let status = crate::services::http_client::internal_post(&url, payload).await?;
+    debug!("📦 [inventory] send_product_rating response: HTTP {}", status);
+
+    match status {
+        200 => {
+            debug!("✅ [inventory] product rating terkirim product_id={}", product_id);
+            Ok(())
+        }
+        404 => {
+            debug!("⚠️ [inventory] produk tidak ditemukan product_id={} (non-fatal)", product_id);
+            Ok(())
+        }
+        409 => {
+            debug!("ℹ️ [inventory] rating produk sudah dikirim order_id={} (idempotent)", order_id);
+            Ok(())
+        }
+        code => {
+            error!("❌ [inventory] send_product_rating unexpected status={} product_id={}", code, product_id);
+            Ok(())
+        }
+    }
+}

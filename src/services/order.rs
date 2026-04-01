@@ -209,7 +209,7 @@ pub async fn update_status(
         debug!("✅ [update_status] order Completed, confirming stock product_id={}", product_id);
 
         // rating dari request jika ada, inventory akan update avg_rating
-        let rating = req.rating.map(|r| r.product_rating as f64);
+        let rating = req.rating_product.map(|r| r.product_rating as f64);
 
         if let Err(e) = confirm_stock(product_id, order_id, rating).await {
             error!("⚠️ [update_status] confirm_stock gagal (non-fatal): {:?}", e);
