@@ -10,7 +10,7 @@ use axum::http::HeaderMap;
 use uuid::Uuid;
 use crate::error::AppError;
 use crate::middleware::security_config::validate_service_key;
-use crate::models::order_request::PaymentConfirmedRequest;
+use crate::models::order_request::{PaymentConfirmedRequest, RefundConfirmedRequest};
 use crate::services::order_internal as order_internal_svc;
 
 // GET /internal/orders/{order_id}/payment-info
@@ -54,6 +54,28 @@ pub async fn payment_confirmed(
         "data": {
             "order_id": order.order_id,
             "status":   order.status,
+        }
+    })))
+}
+
+// POST /internal/orders/{order_id}/refund-confirmed
+pub async fn refund_confirmed(
+    State(pool): State<Arc<PgPool>>,
+    headers: HeaderMap,
+    Path(order_id): Path<Uuid>,
+    Json(req): Json<RefundConfirmedRequest>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    validate_service_key(&headers)?;
+
+    let order = order_internal_svc::refund_confirmed(&pool, order_id, req).await?;
+
+    Ok(Json(json!({
+        "success": true,
+        "message": "Refund terkonfirmasi",
+        "data": {
+            "order_id":        order.order_id,
+            "status":          order.status,
+            "refund_confirmed": true,
         }
     })))
 }

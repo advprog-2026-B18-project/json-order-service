@@ -42,3 +42,9 @@ pub struct PaymentConfirmedRequest {
     pub wallet_transaction_id: Uuid,
     pub amount_deducted: i64,
 }
+
+#[derive(Debug, Deserialize, Validate)]
+pub struct RefundConfirmedRequest {
+    pub wallet_transaction_id: Uuid,
+    pub amount_refunded: i64,
+}

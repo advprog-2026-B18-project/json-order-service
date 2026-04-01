@@ -56,6 +56,8 @@ async fn main() {
                get(controller::internal::payment_info))
         .route("/internal/orders/:order_id/payment-confirmed",
                post(controller::internal::payment_confirmed))
+        .route("/internal/orders/:order_id/refund-confirmed",
+               post(controller::internal::refund_confirmed))
 
         .with_state(shared_pool);
 
