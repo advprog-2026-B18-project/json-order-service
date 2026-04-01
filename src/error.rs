@@ -9,10 +9,15 @@ use thiserror::Error;
 pub type Result<T> = std::result::Result<T, AppError>;
 
 #[derive(Debug, Error)]
+#[allow(dead_code)]
 pub enum AppError {
     // ── 400 ──
     #[error("Validation error: {0}")]
     Validation(String),
+
+    // ── 401 ──
+    #[error("{0}")]
+    Unauthorized(String),
 
     // ── 403 ──
     #[error("{0}")]
@@ -55,6 +60,10 @@ impl IntoResponse for AppError {
             AppError::Validation(m) => (
                 StatusCode::BAD_REQUEST,
                 json!({"success":false,"message":m,"errors":[{"field":"unknown","message":m}]}),
+            ),
+            AppError::Unauthorized(m) => (
+                StatusCode::UNAUTHORIZED,
+                json!({"success":false,"message":m}),
             ),
             AppError::Forbidden(m) => (StatusCode::FORBIDDEN, json!({"success":false,"message":m})),
             AppError::NotFound(m) => (StatusCode::NOT_FOUND, json!({"success":false,"message":m})),

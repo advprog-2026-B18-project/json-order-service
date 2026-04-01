@@ -5,7 +5,6 @@ Microservice untuk mengelola **Modul Order & War Engine** pada platform JaStip O
 ## Tanggung Jawab Modul
 
 Modul ini bertindak sebagai orkestrator transaksi — menangani seluruh siklus hidup pesanan mulai dari checkout hingga selesai, sekaligus mengelola mekanisme war (flash sale) untuk barang limited edition.
-
 ---
 
 ## Yang Dilakukan Modul Ini
@@ -194,3 +193,12 @@ Array yang menyimpan seluruh log perubahan status pesanan secara kronologis.
 - jastiper_rating → Skala 1.0–5.0.
 - product_rating → Skala 1.0–5.0.
 - product_images → Array URL foto produk dari Titipers. Default: [].
+---
+
+## ERD
+![img.png](img.png)
+
+---
+
+## STATE DIAGRAM
+![img_1.png](img_1.png)
