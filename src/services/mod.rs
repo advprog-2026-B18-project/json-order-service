@@ -5,3 +5,4 @@ pub mod wallet_client;
 mod auth_client;
 pub mod rating_jastiper;
 pub mod rating_product;
+pub mod order_internal;

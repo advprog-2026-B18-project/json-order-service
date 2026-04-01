@@ -36,3 +36,9 @@ pub struct CancelRequest {
     #[validate(length(max = 500))]
     pub notes: Option<String>,
 }
+
+#[derive(Debug, Deserialize, Validate)]
+pub struct PaymentConfirmedRequest {
+    pub wallet_transaction_id: Uuid,
+    pub amount_deducted: i64,
+}

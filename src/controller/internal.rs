@@ -6,31 +6,22 @@ use reqwest::StatusCode;
 use serde_json::json;
 use sqlx::PgPool;
 use std::sync::Arc;
+use axum::http::HeaderMap;
 use uuid::Uuid;
-use validator::Validate;
 use crate::error::AppError;
-use crate::middleware::auth::JwtClaims;
-use crate::services::order as order_svc;
+use crate::middleware::security_config::validate_service_key;
+use crate::models::order_request::PaymentConfirmedRequest;
+use crate::services::order_internal as order_internal_svc;
 
 // GET /internal/orders/{order_id}/payment-info
 pub async fn payment_info(
     State(pool): State<Arc<PgPool>>,
     Path(order_id): Path<Uuid>,
-    headers: axum::http::HeaderMap,
+    headers: HeaderMap,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let service_key = headers
-        .get("X-Service-Key")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("");
+    validate_service_key(&headers)?;
 
-    let expected = std::env::var("INTERNAL_SERVICE_KEY")
-        .unwrap_or_else(|_| "internal-secret".to_string());
-
-    if service_key != expected {
-        return Err(AppError::Unauthorized("Invalid service key".to_string()));
-    }
-
-    let order = order_svc::get_order_internal(&pool, order_id).await?;
+    let order = order_internal_svc::get_order_internal(&pool, order_id).await?;
 
     Ok(Json(json!({
         "success": true,
@@ -42,6 +33,27 @@ pub async fn payment_info(
             "total_price":     order.total_price,
             "status":          order.status,
             "product_snapshot": order.product_snapshot,
+        }
+    })))
+}
+
+// POST /internal/orders/{order_id}/payment-confirmed
+pub async fn payment_confirmed(
+    State(pool): State<Arc<PgPool>>,
+    Path(order_id): Path<Uuid>,
+    headers: HeaderMap,                         // ← Headers dulu
+    Json(req): Json<PaymentConfirmedRequest>,   // ← Body/Json terakhir
+) -> Result<Json<serde_json::Value>, AppError> {
+    validate_service_key(&headers)?;
+
+    let order = order_internal_svc::payment_confirmed(&pool, order_id, req).await?;
+
+    Ok(Json(json!({
+        "success": true,
+        "message": "Status order diperbarui ke PAID",
+        "data": {
+            "order_id": order.order_id,
+            "status":   order.status,
         }
     })))
 }
