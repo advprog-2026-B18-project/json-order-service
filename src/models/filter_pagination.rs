@@ -1,4 +1,4 @@
-use chrono::NaiveDate;
+use chrono::{DateTime, NaiveDate, Utc};
 use serde::Deserialize;
 use utoipa::ToSchema;
 use uuid::Uuid;
@@ -10,8 +10,8 @@ pub struct OrderFilter {
     pub jastiper_id: Option<Uuid>,
     pub titipers_id: Option<Uuid>,
     pub product_id: Option<Uuid>,
-    pub date_from: NaiveDate,
-    pub date_to: NaiveDate,
+    pub date_from: DateTime<Utc>,
+    pub date_to: DateTime<Utc>,
 }
 
 #[derive(Debug, Deserialize, ToSchema, Default)]

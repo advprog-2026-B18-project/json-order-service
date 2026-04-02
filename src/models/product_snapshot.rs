@@ -1,4 +1,4 @@
-use chrono::NaiveDate;
+use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use uuid::Uuid;
@@ -11,7 +11,7 @@ pub struct ProductSnapshot {
     pub description: String,
     pub image_url: String,
     pub origin_country: String,
-    pub purchase_date: NaiveDate,
+    pub purchase_date: DateTime<Utc>,
     #[validate(range(min = 0))]
     pub unit_price: i64,
     #[validate(range(min = 0))]
