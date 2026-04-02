@@ -133,6 +133,25 @@ pub async fn update_status(
     })))
 }
 
+pub async fn confirm_order(
+    State(pool): State<Arc<PgPool>>,
+    claims: JwtClaims,
+    Path(order_id): Path<Uuid>,
+) -> Result<(StatusCode, Json<serde_json::Value>), AppError> {
+    let order = svc::confirm_order(&pool, order_id, claims.user_id()?).await?;
+
+    Ok((StatusCode::OK,
+        Json(json!({
+            "success": true,
+            "message": "Pesanan berhasil dikonfirmasi selesai",
+            "data": {
+                "order_id":     order.order_id,
+                "status":       order.status,
+                "completed_at": order.updated_at,  // ganti ke completed_at jika field-nya ada
+            }
+        }))))
+}
+
 // POST /orders/{order_id}/cancel
 pub async fn cancel_order(
     State(pool): State<Arc<PgPool>>,

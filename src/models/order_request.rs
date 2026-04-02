@@ -3,12 +3,9 @@ use utoipa::ToSchema;
 use uuid::Uuid;
 use validator::Validate;
 use crate::models::order_status_history::{OrderStatus};
-use crate::models::rating::Rating;
+use crate::models::rating_jastiper::RatingJastiper;
+use crate::models::rating_product::RatingProduct;
 use crate::models::shipping_address::ShippingAddress;
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// REQUEST / RESPONSE STRUCTS
-// ═══════════════════════════════════════════════════════════════════════════════
 
 #[derive(Debug, Deserialize, ToSchema, Validate)]
 pub struct CreateOrderRequest {
@@ -29,7 +26,8 @@ pub struct UpdateStatusRequest {
     /// Wajib diisi saat status = Shipped
     pub courier: Option<String>,
     /// Sunnah diisi saat status = Completed
-    pub rating: Option<Rating>,
+    pub rating_jast: Option<RatingJastiper>,
+    pub rating_product: Option<RatingProduct>,
 }
 
 #[derive(Debug, Deserialize, ToSchema, Validate)]
@@ -37,4 +35,16 @@ pub struct CancelRequest {
     pub cancellation_reason: String,
     #[validate(length(max = 500))]
     pub notes: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Validate)]
+pub struct PaymentConfirmedRequest {
+    pub wallet_transaction_id: Uuid,
+    pub amount_deducted: i64,
+}
+
+#[derive(Debug, Deserialize, Validate)]
+pub struct RefundConfirmedRequest {
+    pub wallet_transaction_id: Uuid,
+    pub amount_refunded: i64,
 }
