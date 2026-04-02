@@ -34,6 +34,8 @@ async fn main() {
                get(controller::order::get_order_history))
         .route("/orders/{order_id}/status",
                patch(controller::order::update_status))
+        .route("/orders/:order_id/confirm",
+               patch(controller::order::confirm_order))
         .route("/orders/{order_id}/cancel",
                post(controller::order::cancel_order))
         .route("/orders/my/purchases",
