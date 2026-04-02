@@ -332,39 +332,3 @@ pub async fn my_sales(
     debug!("✅ [my_sales] found {} orders", result.0.len());
     Ok(result)
 }
-
-pub async fn confirm_order(
-    pool: &PgPool,
-    order_id: Uuid,
-    user_id: Uuid,
-) -> Result<Order, AppError> {
-    let order = repo::find_by_id(pool, order_id).await?
-        .ok_or_else(|| AppError::NotFound("Pesanan tidak ditemukan".to_string()))?;
-
-    if order.titipers_id != user_id {
-        return Err(AppError::Forbidden("Access denied".to_string()));
-    }
-
-    // 3. Validasi state machine — hanya boleh dari SHIPPED
-    if order.status != OrderStatus::Shipped {
-        return Err(AppError::UnprocessableEntity(
-            format!("Order is not in SHIPPED status, current_status: {:?}", order.status)
-        ));
-    }
-
-    info!("✅ [confirm_order] order_id={} dikonfirmasi oleh titipers_id={}", order_id, user_id);
-
-    // 4. Update status ke COMPLETED, catat di history
-    let result = history_repo::update_status(
-        pool,
-        order_id,
-        &OrderStatus::Completed,
-        &user_id.to_string(),
-        "TITIPERS",            
-        Some("Titipers mengonfirmasi penerimaan barang"),
-        None,
-        None,
-    ).await?;
-
-    Ok(result)
-}
