@@ -9,7 +9,7 @@ use crate::repositories::order_status_history::insert_status_history;
 use crate::error::{AppError, Result};
 use crate::models::filter_pagination::OrderFilter;
 use crate::models::order_request::CreateOrderRequest;
-use crate::models::order_status_history::OrderStatus;
+use crate::models::order_state::OrderStatus;
 
 const ORDER_SELECT: &str = r#"SELECT order_id, titipers_id, jastiper_id, product_id,
                   product_snapshot, quantity, unit_price, service_fee, total_price,

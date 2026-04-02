@@ -4,7 +4,7 @@ use validator::Validate;
 use tracing::{debug, info, warn, error};
 
 use crate::error::AppError;
-use crate::models::order_status_history::OrderStatus;
+use crate::models::order_state::OrderStatus;
 use crate::models::rating_jastiper::{CreateRatingJastiperRequest, RatingJastiper};
 use crate::repositories::order as order_repo;
 use crate::repositories::rating_jastiper as rating_jastiper_repo;

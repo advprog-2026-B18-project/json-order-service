@@ -1,7 +1,9 @@
+use std::fmt;
+use std::fmt::Display;
+use std::str::FromStr;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use crate::error::AppError;
-use crate::models::order_status_history::OrderStatus;
 use crate::models::role::Role;
 
 // ENUM UNTUK STATE
@@ -16,6 +18,45 @@ pub enum OrderStatus {
     Refunding,
     RefundFailed,
     Cancelled,
+}
+
+impl OrderStatus {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            OrderStatus::Pending => "PENDING",
+            OrderStatus::Paid => "PAID",
+            OrderStatus::Purchased => "PURCHASED",
+            OrderStatus::Shipped => "SHIPPED",
+            OrderStatus::Completed => "COMPLETED",
+            OrderStatus::Refunding => "REFUNDING",
+            OrderStatus::RefundFailed => "REFUND_FAILED",
+            OrderStatus::Cancelled => "CANCELLED",
+        }
+    }
+}
+
+impl FromStr for OrderStatus {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "PENDING" => Ok(OrderStatus::Pending),
+            "PAID" => Ok(OrderStatus::Paid),
+            "PURCHASED" => Ok(OrderStatus::Purchased),
+            "SHIPPED" => Ok(OrderStatus::Shipped),
+            "COMPLETED" => Ok(OrderStatus::Completed),
+            "REFUNDING" => Ok(OrderStatus::Refunding),
+            "REFUND_FAILED" => Ok(OrderStatus::RefundFailed),
+            "CANCELLED" => Ok(OrderStatus::Cancelled),
+            _ => Err(format!("Nilai Order Status tidak valid: '{}'", s)),
+        }
+    }
+}
+
+impl Display for OrderStatus {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
 }
 
 // TRAIT UNTUK STATE

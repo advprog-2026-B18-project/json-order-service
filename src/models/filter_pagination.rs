@@ -1,7 +1,7 @@
 use serde::Deserialize;
 use utoipa::ToSchema;
 use uuid::Uuid;
-use crate::models::order_status_history::OrderStatus;
+use crate::models::order_state::OrderStatus;
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // FILTER & PAGINATION
