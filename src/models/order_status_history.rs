@@ -27,17 +27,6 @@ pub enum OrderStatusHistoryIden {
 // ENUMS
 // ═══════════════════════════════════════════════════════════════════════════════
 
-#[derive(Debug, Serialize, Deserialize, sqlx::Type, Clone, PartialEq, ToSchema)]
-#[sqlx(type_name = "order_status", rename_all = "SCREAMING_SNAKE_CASE")]
-pub enum OrderStatus {
-    Pending,
-    Paid,
-    Purchased,
-    Shipped,
-    Completed,
-    Cancelled,
-}
-
 
 impl OrderStatus {
     /// Mengembalikan daftar status yang valid sebagai transisi berikutnya.
