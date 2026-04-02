@@ -4,7 +4,6 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use sea_query::Iden;
 use uuid::Uuid;
-use crate::models::order_status_history::OrderStatus::*;
 
 
 #[derive(Iden)]

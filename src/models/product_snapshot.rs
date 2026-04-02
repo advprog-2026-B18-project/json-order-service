@@ -1,24 +1,19 @@
+use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use uuid::Uuid;
+use validator::Validate;
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// VALUE OBJECTS
-// ═══════════════════════════════════════════════════════════════════════════════
-
-/// Snapshot produk yang disimpan sebagai JSONB di DB pada saat order dibuat.
-/// Tipe harga konsisten dengan Order (i64) untuk menghindari mismatch saat serialisasi.
-#[derive(Debug, Serialize, Deserialize, Clone, ToSchema)]
+#[derive(Debug, Serialize, Deserialize, Clone, ToSchema, Validate)]
 pub struct ProductSnapshot {
     pub product_id: Uuid,
     pub name: String,
     pub description: String,
     pub image_url: String,
     pub origin_country: String,
-    /// Format "YYYY-MM-DD"
-    pub purchase_date: String,
-    /// Dalam satuan rupiah (IDR)
+    pub purchase_date: NaiveDate,
+    #[validate(range(min = 0))]
     pub unit_price: i64,
-    /// Dalam satuan rupiah (IDR)
+    #[validate(range(min = 0))]
     pub service_fee: i64,
 }
