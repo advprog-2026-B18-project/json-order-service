@@ -4,7 +4,8 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use sea_query::Iden;
 use uuid::Uuid;
-
+use crate::models::order_state::OrderStatus;
+use crate::models::role::Role;
 
 #[derive(Iden)]
 pub enum OrderStatusHistoryIden {
@@ -23,9 +24,9 @@ pub enum OrderStatusHistoryIden {
 pub struct OrderStatusHistory {
     pub statushis_id: Uuid,
     pub order_id: Uuid,
-    pub status: String,
+    pub status: OrderStatus,
     pub changed_by: String,
-    pub actor_role: String,
+    pub actor_role: Role,
     pub notes: Option<String>,
     pub timestamp: DateTime<Utc>,
 }

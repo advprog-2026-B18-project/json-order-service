@@ -3,22 +3,25 @@ use sea_query::{PostgresQueryBuilder, Query};
 use sea_query_binder::SqlxBinder;
 use sqlx::PgPool;
 use uuid::Uuid;
+
 use crate::error::AppError;
 use crate::models::order::{Order, OrderIden};
-use crate::models::order_status_history::{OrderStatus, OrderStatusHistory, OrderStatusHistoryIden};
+use crate::models::order_status_history::{OrderStatusHistory, OrderStatusHistoryIden};
 use crate::repositories::order::find_by_id;
 use crate::error::Result;
+use crate::models::order_state::OrderStatus;
+use crate::models::role::Role;
 
 pub async fn insert_status_history(
     pool: &PgPool,
     order_id: Uuid,
-    status: &str,
+    status: &OrderStatus,
     changed_by: &str,
-    actor_role: &str,
+    actor_role: &Role,
     notes: Option<&str>,
-) -> crate::error::Result<()> {
+) -> Result<()> {
     let (sql, values) = Query::insert()
-        .into_table(OrderStatusHistoryIden::Table)
+        .into_table(OrderStatusHistoryIden::OrderStatusHistory)
         .columns([
             OrderStatusHistoryIden::StatusHisId,
             OrderStatusHistoryIden::OrderId,
@@ -31,9 +34,9 @@ pub async fn insert_status_history(
         .values_panic([
             Uuid::new_v4().into(),
             order_id.into(),
-            status.into(),
+            status.to_string().into(),
             changed_by.into(),
-            actor_role.into(),
+            actor_role.to_string().into(),
             notes.unwrap_or("").into(),
             Utc::now().into(),
         ])
@@ -43,13 +46,12 @@ pub async fn insert_status_history(
     Ok(())
 }
 
-#[allow(clippy::too_many_arguments)]
-pub async fn update_status(
+pub async fn update_status_history(
     pool: &PgPool,
     order_id: Uuid,
     new_status: &OrderStatus,
     changed_by: &str,
-    actor_role: &str,
+    actor_role: &Role,
     notes: Option<&str>,
     tracking_number: Option<&str>,
     courier: Option<&str>,
@@ -59,20 +61,6 @@ pub async fn update_status(
     let order = find_by_id(pool, order_id)
         .await?
         .ok_or_else(|| AppError::NotFound("Pesanan tidak ditemukan".to_string()))?;
-
-    if !order.status.can_transition_to(new_status) {
-        let valid: Vec<String> = order
-            .status
-            .valid_next()
-            .iter()
-            .map(|s: &OrderStatus| s.to_string())
-            .collect();
-        return Err(AppError::InvalidStatusTransition {
-            current: order.status.to_string(),
-            requested: new_status.to_string(),
-            valid,
-        });
-    }
 
     let status_str = new_status.to_string(); 
 
@@ -100,7 +88,7 @@ pub async fn update_status(
     let (sql, values) = query.build_sqlx(PostgresQueryBuilder);
     sqlx::query_with(&sql, values).execute(pool).await?;
 
-    insert_status_history(pool, order_id, &status_str, changed_by, actor_role, notes).await?;
+    insert_status_history(pool, order_id, &new_status, changed_by, actor_role, notes).await?;
 
     find_by_id(pool, order_id).await?.ok_or(AppError::Internal)
 }
@@ -119,7 +107,7 @@ pub async fn get_status_history(
             OrderStatusHistoryIden::Notes,
             OrderStatusHistoryIden::Timestamp,
         ])
-        .from(OrderStatusHistoryIden::Table)
+        .from(OrderStatusHistoryIden::OrderStatusHistory)
         .and_where(sea_query::Expr::col(OrderStatusHistoryIden::OrderId).eq(order_id))
         .order_by(OrderStatusHistoryIden::Timestamp, sea_query::Order::Asc)
         .build_sqlx(PostgresQueryBuilder);

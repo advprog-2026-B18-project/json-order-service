@@ -29,7 +29,7 @@ impl FromStr for Role {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
-            "TITPERS" => Ok(Role::Titipers),
+            "TITIPERS" => Ok(Role::Titipers),
             "JASTIPER" => Ok(Role::Jastiper),
             "ADMIN" => Ok(Role::Admin),
             "SYSTEM" => Ok(Role::System),
