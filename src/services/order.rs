@@ -4,16 +4,14 @@ use serde_json::json;
 use tracing::{debug, info, warn, error};
 
 use crate::error::AppError;
-use crate::models::order::Order;
-use crate::models::order_request::{
-    CreateOrderRequest, CancelRequest, UpdateStatusRequest,
-};
+use crate::models::order::{CancelRequest, CreateOrderRequest, Order, UpdateStatusRequest};
 use crate::models::order_status_history::{OrderStatus, OrderStatusHistory};
 use crate::models::filter_pagination::{OrderFilter, PaginationParams};
-use crate::models::cancelled_by::CancelledBy;
+use crate::models::order_state::OrderMachine;
+use crate::models::role::Role;
 use crate::repositories::{
-    order as repo,
-    order_status_history as history_repo,
+    order as order_repo,
+    order_status_history as history_repo
 };
 use crate::services::inventory_client::{confirm_stock, fetch_product, release_stock, reserve_stock};
 use crate::services::wallet_client::{deduct_wallet, refund_wallet};
@@ -28,11 +26,9 @@ pub async fn checkout(
           titipers_id, req.product_id, req.quantity);
 
     let order_id = Uuid::new_v4();
-    debug!("🆔 [checkout] order_id generated={}", order_id);
 
     let product = fetch_product(req.product_id).await
         .map_err(|e| { error!("❌ [checkout] fetch_product gagal: {:?}", e); e })?;
-    debug!("📦 [checkout] product fetched: {}", product);
 
     let jastiper_id: Uuid =
         serde_json::from_value(product["jastiperId"].clone())
@@ -40,7 +36,6 @@ pub async fn checkout(
                 error!("❌ [checkout] parse jastiper_id gagal: {:?}", e);
                 AppError::Internal
             })?;
-    debug!("👤 [checkout] jastiper_id={}", jastiper_id);
 
     if titipers_id == jastiper_id {
         warn!("⚠️ [checkout] titipers_id == jastiper_id, forbidden");
@@ -52,8 +47,6 @@ pub async fn checkout(
     let unit_price  = product["price"].as_i64().unwrap_or(0);
     let service_fee = product["service_fee"].as_i64().unwrap_or(0);
     let total_price = (unit_price + service_fee) * req.quantity as i64;
-    debug!("💰 [checkout] unit_price={} service_fee={} total_price={}",
-           unit_price, service_fee, total_price);
 
     let snapshot = json!({
         "product_id":     req.product_id,
@@ -65,42 +58,63 @@ pub async fn checkout(
         "unit_price":     unit_price,
         "service_fee":    service_fee,
     });
-    debug!("📸 [checkout] snapshot={}", snapshot);
 
-    // 1. Reserve stok
     debug!("📦 [checkout] reserving stock product_id={} qty={}", req.product_id, req.quantity);
     reserve_stock(req.product_id, order_id, req.quantity).await
         .map_err(|e| { error!("❌ [checkout] reserve_stock gagal: {:?}", e); e })?;
     info!("✅ [checkout] stock reserved");
 
-    // 2. Deduct wallet — rollback stok jika gagal
-    let desc = format!("Pembayaran Order #{}", order_id);
-    debug!("💳 [checkout] deducting wallet titipers_id={} amount={}", titipers_id, total_price);
-    if let Err(e) = deduct_wallet(titipers_id, order_id, total_price, &desc).await {
-        error!("❌ [checkout] deduct_wallet gagal: {:?}, rolling back stock", e);
-        let _ = release_stock(req.product_id, order_id, req.quantity).await;
-        return Err(e);
-    }
-    info!("✅ [checkout] wallet deducted");
-
-    // 3. Simpan ke DB — rollback semua jika gagal
     let pid = req.product_id;
     let qty = req.quantity;
     debug!("💾 [checkout] saving order to DB");
-    match repo::create(pool, titipers_id, jastiper_id, order_id,
+    match order_repo::create(pool, titipers_id, jastiper_id,
                        req, snapshot, unit_price, service_fee, total_price).await {
         Ok(order) => {
             info!("✅ [checkout] order created successfully order_id={}", order.order_id);
             Ok(order)
         }
         Err(e) => {
-            error!("❌ [checkout] repo::create gagal: {:?}, rolling back stock & wallet", e);
+            error!("❌ [checkout] order_repo::create gagal: {:?}, rolling back stock", e);
             let _ = release_stock(pid, order_id, qty).await;
-            let rd = format!("Refund Order #{} - gagal menyimpan", order_id);
-            let _ = refund_wallet(titipers_id, order_id, total_price, &rd).await;
             Err(e)
         }
     }
+}
+
+// ── payment ──────────────────────────────────────────────────────
+pub async fn payment(
+    pool: &PgPool,
+    titipers_id: Uuid,
+    order_id: Uuid,
+) -> Result<Order, AppError> {
+    let order = order_repo::find_by_id(pool, order_id).await?
+        .ok_or_else(|| AppError::NotFound("Pesanan tidak ditemukan".to_string()))?;
+
+    if order.titipers_id != titipers_id {
+        return Err(AppError::Forbidden("Bukan pemilik order".to_string()));
+    }
+
+    if order.status != OrderStatus::Pending {
+        return Err(AppError::Conflict(
+            format!("Status harus PENDING, sekarang {:?}", order.status)
+        ));
+    }
+
+    let desc = format!("Pembayaran Order #{}", order_id);
+    if let Err(e) = deduct_wallet(titipers_id, order_id, order.total_price, &desc).await {
+        error!("❌ [payment] deduct_wallet gagal: {:?}", e);
+        return Err(e);
+    }
+
+    let result = order_repo::update(
+        pool, order_id, &OrderStatus::Paid,
+        &titipers_id.to_string(), &Role::Titipers,
+        Some("Pembayaran berhasil"),
+        None, None,
+    ).await?;
+
+    info!("✅ [payment] wallet deducted, wallet service sudah menginfirmasi pembayaran");
+    Ok(result)
 }
 
 // ── get_order ─────────────────────────────────────────────────────
@@ -111,7 +125,7 @@ pub async fn get_order(
 ) -> Result<Order, AppError> {
     debug!("🔍 [get_order] order_id={} requester_id={}", order_id, requester_id);
 
-    let order = repo::find_by_id(pool, order_id).await
+    let order = order_repo::find_by_id(pool, order_id).await
         .map_err(|e| { error!("❌ [get_order] DB error: {:?}", e); e })?
         .ok_or_else(|| {
             warn!("⚠️ [get_order] order not found: {}", order_id);
@@ -151,64 +165,79 @@ pub async fn update_status(
     pool: &PgPool,
     order_id: Uuid,
     requester_id: Uuid,
-    role: &str,
+    role: &Role,
     req: UpdateStatusRequest,
 ) -> Result<Order, AppError> {
-    info!("🔄 [update_status] order_id={} requester_id={} role={} new_status={:?}",
+    info!("🔄 [update_order] order_id={} requester_id={} role={} new_status={:?}",
           order_id, requester_id, role, req.status);
 
-    let order = repo::find_by_id(pool, order_id).await
-        .map_err(|e| { error!("❌ [update_status] DB error: {:?}", e); e })?
+    let order = order_repo::find_by_id(pool, order_id).await
+        .map_err(|e| { error!("❌ [update_order] DB error: {:?}", e); e })?
         .ok_or_else(|| {
-            warn!("⚠️ [update_status] order not found: {}", order_id);
+            warn!("⚠️ [update_order] order not found: {}", order_id);
             AppError::NotFound("Pesanan tidak ditemukan".to_string())
         })?;
 
-    debug!("📋 [update_status] current status={:?}", order.status);
+    debug!("📋 [update_order] current status={:?}", order.status);
 
-    match (&req.status, role) {
-        (OrderStatus::Purchased, "JASTIPER")
-        | (OrderStatus::Shipped, "JASTIPER") => {
+    match (&req.status, &role) {
+        (OrderStatus::Purchased | OrderStatus::Shipped, Role::Jastiper) => {
             if order.jastiper_id != requester_id {
-                warn!("⚠️ [update_status] forbidden: bukan jastiper pemilik produk");
-                return Err(AppError::Forbidden(
-                    "Hanya jastiper pemilik produk".to_string()));
+                return Err(AppError::Forbidden("Hanya jastiper pemilik produk".to_string()));
             }
         }
-        (OrderStatus::Completed, "TITIPERS") => {
+        (OrderStatus::Completed, Role::Titipers) => {
             if order.titipers_id != requester_id {
-                warn!("⚠️ [update_status] forbidden: bukan titipers pemilik order");
-                return Err(AppError::Forbidden(
-                    "Hanya titipers pemilik order".to_string()));
+                return Err(AppError::Forbidden("Hanya titipers pemilik order".to_string()));
             }
         }
-        (_, "ADMIN") => {
-            debug!("👑 [update_status] admin override");
+        _ => {}
+    }
+
+    match &req.status {
+        OrderStatus::Shipped => {
+            if req.tracking_number.is_none() {
+                return Err(AppError::UnprocessableEntity(
+                    "tracking_number wajib diisi saat status SHIPPED".to_string()
+                ));
+            }
+            if req.courier.is_none() {
+                return Err(AppError::UnprocessableEntity(
+                    "courier wajib diisi saat status SHIPPED".to_string()
+                ));
+            }
+        }
+        OrderStatus::Completed => {
         }
         _ => {
-            warn!("⚠️ [update_status] role={} tidak punya izin untuk status={:?}", role, req.status);
-            return Err(AppError::Forbidden("Role tidak punya izin".to_string()));
+            if req.rating_product.is_some() || req.rating_jast.is_some() {
+                return Err(AppError::UnprocessableEntity(
+                    "Rating hanya bisa diisi saat status COMPLETED".to_string()
+                ));
+            }
         }
     }
 
-    let result = history_repo::update_status(
+    let mut machine = OrderMachine::from_status(&order.status);
+    machine.update_status(&role, &req.status)?;
+
+    let result = order_repo::update(
         pool, order_id, &req.status,
-        &requester_id.to_string(), &role.to_uppercase(),
+        &requester_id.to_string(), &role,
         req.notes.as_deref(),
         req.tracking_number.as_deref(),
         req.courier.as_deref(),
     ).await
-        .map_err(|e| { error!("❌ [update_status] DB error: {:?}", e); e })?;
+        .map_err(|e| { error!("❌ [update_order] DB error: {:?}", e); e })?;
 
-    // 3a. Order selesai → konfirmasi pengurangan stok permanen + update rating
     if req.status == OrderStatus::Completed {
+        // TODO
         let product_id: Uuid = serde_json::from_value(
             result.product_snapshot["product_id"].clone()
         ).unwrap_or(result.product_id);
 
         debug!("✅ [update_status] order Completed, confirming stock product_id={}", product_id);
 
-        // rating dari request jika ada, inventory akan update avg_rating
         let rating = req.rating_product.map(|r| r.product_rating as f64);
 
         if let Err(e) = confirm_stock(product_id, order_id, rating).await {
@@ -227,12 +256,12 @@ pub async fn cancel_order(
     pool: &PgPool,
     order_id: Uuid,
     requester_id: Uuid,
-    role: &str,
+    role: &Role,
     req: CancelRequest,
 ) -> Result<Order, AppError> {
     info!("🚫 [cancel_order] order_id={} requester_id={} role={}", order_id, requester_id, role);
 
-    let order = repo::find_by_id(pool, order_id).await
+    let order = order_repo::find_by_id(pool, order_id).await
         .map_err(|e| { error!("❌ [cancel_order] DB error: {:?}", e); e })?
         .ok_or_else(|| {
             warn!("⚠️ [cancel_order] order not found: {}", order_id);
@@ -241,44 +270,16 @@ pub async fn cancel_order(
 
     debug!("📋 [cancel_order] current status={:?}", order.status);
 
-    let (cancelled_by, actor_role) = match role {
-        "TITIPERS" => {
-            if order.titipers_id != requester_id {
-                warn!("⚠️ [cancel_order] forbidden: bukan pemilik order");
-                return Err(AppError::Forbidden("Bukan pemilik order".to_string()));
-            }
-            if order.status != OrderStatus::Paid {
-                warn!("⚠️ [cancel_order] invalid status={:?}, harus PAID", order.status);
-                return Err(AppError::UnprocessableEntity(
-                    "Titipers hanya bisa cancel di status PAID".to_string()));
-            }
-            (CancelledBy::Titipers, "TITIPERS")
-        }
-        "JASTIPER" => {
-            if order.jastiper_id != requester_id {
-                warn!("⚠️ [cancel_order] forbidden: bukan jastiper produk ini");
-                return Err(AppError::Forbidden("Bukan jastiper produk ini".to_string()));
-            }
-            (CancelledBy::Jastiper, "JASTIPER")
-        }
-        "ADMIN" => {
-            debug!("👑 [cancel_order] admin override");
-            (CancelledBy::Admin, "ADMIN")
-        }
-        _ => {
-            warn!("⚠️ [cancel_order] role={} tidak dikenali", role);
-            return Err(AppError::Forbidden("Role tidak dikenali".to_string()));
-        }
-    };
-
     debug!("💾 [cancel_order] saving cancellation to DB");
-    let updated = repo::cancel_order(
-        pool, order_id, &req.cancellation_reason,
-        &cancelled_by, &requester_id.to_string(),
-        actor_role, req.notes.as_deref(),
+    let updated = order_repo::update(
+        pool, order_id, &OrderStatus::Refunding,
+        &requester_id.to_string(), &role,
+        req.notes.as_deref(),
+        None, None,
     ).await
         .map_err(|e| { error!("❌ [cancel_order] repo::cancel_order gagal: {:?}", e); e })?;
 
+    // TODO
     let pid: Uuid =
         serde_json::from_value(updated.product_snapshot["product_id"].clone())
             .unwrap_or(updated.product_id);
@@ -303,11 +304,12 @@ pub async fn my_purchases(
     debug!("📋 [my_purchases] titipers_id={} page={:?} limit={:?}",
            titipers_id, params.page, params.limit);
 
-    let filter = Some(OrderFilter {
+    let order_filter = OrderFilter {
         titipers_id: Some(titipers_id), ..Default::default()
-    });
+    };
+    let filter = Some(&order_filter);
 
-    let result = repo::find_all(pool, filter, params.page, params.limit).await
+    let result = order_repo::find_all(pool, filter, &params).await
         .map_err(|e| { error!("❌ [my_purchases] DB error: {:?}", e); e })?;
 
     debug!("✅ [my_purchases] found {} orders", result.0.len());
@@ -322,11 +324,12 @@ pub async fn my_sales(
     debug!("📋 [my_sales] jastiper_id={} page={:?} limit={:?}",
            jastiper_id, params.page, params.limit);
 
-    let filter = Some(OrderFilter {
+    let order_filter = OrderFilter {
         jastiper_id: Some(jastiper_id), ..Default::default()
-    });
+    };
+    let filter = Some(&order_filter);
 
-    let result = repo::find_all(pool, filter, params.page, params.limit).await
+    let result = order_repo::find_all(pool, filter, &params).await
         .map_err(|e| { error!("❌ [my_sales] DB error: {:?}", e); e })?;
 
     debug!("✅ [my_sales] found {} orders", result.0.len());

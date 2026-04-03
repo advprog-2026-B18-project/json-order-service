@@ -8,3 +8,4 @@ pub mod rating_jastiper;
 pub mod rating_product;
 pub mod order_state;
 pub mod role;
+pub mod payment;
