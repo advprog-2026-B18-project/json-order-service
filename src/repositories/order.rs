@@ -216,34 +216,39 @@ pub async fn create(
 pub async fn update(
     pool: &PgPool,
     order_id: Uuid,
-    status: &OrderStatus,
+    new_status: &OrderStatus,
     changed_by: &str,
     actor_role: &Role,
     notes: Option<&str>,
+    tracking_number: Option<&str>,
+    courier: Option<&str>,
 ) -> Result<Order> {
     let now = Utc::now();
 
-    let (sql, values) = Query::update()
+    let mut query = Query::update();
+    query
         .table(OrderIden::Order)
         .value(
             OrderIden::Status,
-            sea_query::Expr::cust(format!("'{}'::order_status", status.to_string())),
+            Expr::cust(format!("'{}'::order_status", new_status.to_string())),
         )
         .value(OrderIden::UpdatedAt, now)
-        .and_where(Expr::col(OrderIden::OrderId).eq(order_id))
-        .build_sqlx(PostgresQueryBuilder);
+        .and_where(sea_query::Expr::col(OrderIden::OrderId).eq(order_id));
 
+    if *new_status == OrderStatus::Completed {
+        query.value(OrderIden::CompletedAt, now);
+    }
+    if let Some(tn) = tracking_number {
+        query.value(OrderIden::TrackingNumber, tn);
+    }
+    if let Some(c) = courier {
+        query.value(OrderIden::Courier, c);
+    }
+
+    let (sql, values) = query.build_sqlx(PostgresQueryBuilder);
     sqlx::query_with(&sql, values).execute(pool).await?;
 
-    insert_status_history(
-        pool,
-        order_id,
-        status,
-        changed_by,
-        actor_role,
-        notes,
-    )
-        .await?;
+    insert_status_history(pool, order_id, new_status, changed_by, actor_role, notes).await?;
 
     find_by_id(pool, order_id).await?.ok_or(AppError::Internal)
 }

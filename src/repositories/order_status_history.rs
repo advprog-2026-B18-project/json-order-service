@@ -46,53 +46,6 @@ pub async fn insert_status_history(
     Ok(())
 }
 
-pub async fn update_status_history(
-    pool: &PgPool,
-    order_id: Uuid,
-    new_status: &OrderStatus,
-    changed_by: &str,
-    actor_role: &Role,
-    notes: Option<&str>,
-    tracking_number: Option<&str>,
-    courier: Option<&str>,
-) -> Result<Order> {
-    let now = Utc::now();
-
-    let order = find_by_id(pool, order_id)
-        .await?
-        .ok_or_else(|| AppError::NotFound("Pesanan tidak ditemukan".to_string()))?;
-
-    let status_str = new_status.to_string(); 
-
-    let mut query = Query::update();
-    query
-        .table(OrderIden::Order)
-        .value(
-            OrderIden::Status,
-            sea_query::Expr::cust(format!("'{}'::order_status", status_str)),
-        )
-        .value(OrderIden::UpdatedAt, now)
-        .and_where(sea_query::Expr::col(OrderIden::OrderId).eq(order_id));
-
-    if *new_status == OrderStatus::Completed {
-        query.value(OrderIden::CompletedAt, now);
-    }
-
-    if let Some(tn) = tracking_number {
-        query.value(OrderIden::TrackingNumber, tn);
-    }
-    if let Some(c) = courier {
-        query.value(OrderIden::Courier, c);
-    }
-
-    let (sql, values) = query.build_sqlx(PostgresQueryBuilder);
-    sqlx::query_with(&sql, values).execute(pool).await?;
-
-    insert_status_history(pool, order_id, &new_status, changed_by, actor_role, notes).await?;
-
-    find_by_id(pool, order_id).await?.ok_or(AppError::Internal)
-}
-
 pub async fn get_status_history(
     pool: &PgPool,
     order_id: Uuid,
