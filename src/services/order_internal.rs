@@ -1,12 +1,14 @@
 use sqlx::PgPool;
 use tracing::info;
 use uuid::Uuid;
+
 use crate::error::AppError;
-use crate::models::order::Order;
-use crate::models::order_request::{PaymentConfirmedRequest, RefundConfirmedRequest};
+use crate::models::order::{Order, PaymentConfirmedRequest, RefundConfirmedRequest};
 use crate::models::order_status_history::OrderStatus;
+use crate::models::role::Role;
 use crate::repositories::order as order_repo;
 use crate::repositories::order_status_history as history_repo;
+use crate::repositories::order_status_history::insert_status_history;
 
 pub async fn get_order_internal(
     pool: &PgPool,
@@ -28,6 +30,12 @@ pub async fn payment_confirmed(
         return Err(AppError::Conflict("Payment already confirmed".to_string()));
     }
 
+    if order.status != OrderStatus::Pending {
+        return Err(AppError::Conflict(
+            format!("Status harus PENDING, sekarang {:?}", order.status)
+        ));
+    }
+
     if order.total_price != req.amount_deducted {
         return Err(AppError::UnprocessableEntity(
             format!("Amount mismatch, expected {}", order.total_price)
@@ -37,9 +45,9 @@ pub async fn payment_confirmed(
     info!("✅ [payment_confirmed] order_id={} payment dikonfirmasi amount={}",
         order_id, req.amount_deducted);
 
-    let result = history_repo::update_status(
+    let result = order_repo::update(
         pool, order_id, &OrderStatus::Paid,
-        "SYSTEM", "SYSTEM",
+        "SYSTEM", &Role::System,
         Some("Pembayaran dikonfirmasi dari Modul Wallet"),
         None, None,
     ).await?;
@@ -56,11 +64,30 @@ pub async fn refund_confirmed(
         .ok_or_else(|| AppError::NotFound("Pesanan tidak ditemukan".to_string()))?;
 
     if order.status == OrderStatus::Cancelled {
-        return Ok(order);
+        return Err(AppError::Conflict("Refund already confirmed".to_string()));
+    }
+
+    if order.status != OrderStatus::Refunding {
+        return Err(AppError::Conflict(
+            format!("Status harus REFUNDING, sekarang {:?}", order.status)
+        ));
+    }
+
+    if order.total_price != req.amount_refunded {
+        return Err(AppError::UnprocessableEntity(
+            format!("Amount mismatch, expected {}", order.total_price)
+        ));
     }
 
     info!("✅ [refund_confirmed] order_id={} refund dikonfirmasi amount={}",
           order_id, req.amount_refunded);
 
-    Ok(order)
+    let result = order_repo::update(
+        pool, order_id, &OrderStatus::Cancelled,
+        "SYSTEM", &Role::System,
+        Some("Refund dikonfirmasi dari Modul Wallet"),
+        None, None,
+    ).await?;
+
+    Ok(result)
 }
