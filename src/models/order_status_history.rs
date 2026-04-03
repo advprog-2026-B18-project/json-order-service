@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use sea_query::Iden;
 use uuid::Uuid;
-use crate::models::order_state::OrderStatus;
+pub(crate) use crate::models::order_state::OrderStatus;
 use crate::models::role::Role;
 
 #[derive(Iden)]

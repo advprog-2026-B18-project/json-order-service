@@ -9,8 +9,6 @@ use crate::models::rating_product::{CreateRatingProductRequest, RatingProduct};
 use crate::repositories::order as order_repo;
 use crate::repositories::rating_product as rating_product_repo;
 use crate::services::inventory_client::send_product_rating;
-use crate::services::auth_client::send_jastiper_rating;
-use crate::services::rating_product;
 
 pub async fn submit_rating(
     pool: &PgPool,

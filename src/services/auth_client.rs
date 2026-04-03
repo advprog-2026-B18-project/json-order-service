@@ -2,6 +2,7 @@ use serde_json::json;
 use uuid::Uuid;
 use tracing::{debug, error};
 use crate::error::AppError;
+use crate::services::http_client::internal_post;
 
 fn user_url() -> String {
     let url = std::env::var("USER_SERVICE_URL")
@@ -32,7 +33,7 @@ pub(crate) async fn send_jastiper_rating(
     debug!("👤 [user] payload: jastiper_id={} order_id={} rating={} review={:?}",
            jastiper_id, order_id, rating, review);
 
-    let status = crate::services::http_client::internal_post(&url, payload).await?;
+    let status = internal_post(&url, payload).await?;
 
     debug!("👤 [user] send_jastiper_rating response: HTTP {}", status);
 
