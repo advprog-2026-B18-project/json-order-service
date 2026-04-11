@@ -98,3 +98,40 @@ pub(crate) async fn refund_wallet(
     debug!("💳 [wallet] refund_wallet user_id={} order_id={} amount={}", user_id, order_id, amount);
     manage_wallet(WalletAction::Refund, user_id, order_id, amount, description).await
 }
+
+pub(crate) async fn check_wallet(
+    user_id: Uuid,
+    req_amount: i64,
+) -> Result<(), AppError> {
+    debug!("💳 [wallet] deduct_wallet user_id={}", user_id);
+
+    let url = format!("{}/internal/wallets/balance-check", wallet_url());
+    let body = json!({
+        "user_id":     user_id,
+        "required_amount": req_amount,
+    });
+
+    let (status, body) = crate::services::http_client::internal_get(&url, body).await?;
+
+    match status {
+        200 => {
+            let is_sufficient = body["is_sufficient"].as_bool().unwrap_or(false);
+            if is_sufficient {
+                debug!("✅ [wallet] check wallet berhasil untuk user_id={} dengan amount={}", user_id, req_amount);
+                Ok(())
+            } else {
+                warn!("⚠️ [wallet] saldo tidak mencukupi user_id={} amount={}", user_id, req_amount);
+                Err(AppError::UnprocessableEntity("Saldo tidak mencukupi".to_string()))
+            }
+        }
+        404 => {
+            debug!("✅ [wallet] check wallet gagal untuk user_id={} tidak ditemukan", user_id);
+            Ok(())
+        }
+        _ => {
+            error!("❌ [wallet] check wallet unexpected status={} user_id={}", status, user_id);
+            Err(AppError::Internal)
+        }
+    }
+
+}

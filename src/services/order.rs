@@ -14,7 +14,7 @@ use crate::repositories::{
     order_status_history as history_repo
 };
 use crate::services::inventory_client::{confirm_stock, fetch_product, release_stock, reserve_stock};
-use crate::services::wallet_client::{deduct_wallet, refund_wallet};
+use crate::services::wallet_client::{check_wallet, deduct_wallet, refund_wallet};
 
 // ── checkout ──────────────────────────────────────────────────────
 pub async fn checkout(
@@ -63,6 +63,11 @@ pub async fn checkout(
     reserve_stock(req.product_id, order_id, req.quantity).await
         .map_err(|e| { error!("❌ [checkout] reserve_stock gagal: {:?}", e); e })?;
     info!("✅ [checkout] stock reserved");
+
+    debug!("💵 [checkout] checking user balance");
+    check_wallet(titipers_id, total_price).await
+        .map_err(|e| { error!("❌ [wallet] pengecekan saldo gagal: {:?}", e); e })?;
+    info!("✅ [checkout] saldo checked");
 
     let pid = req.product_id;
     let qty = req.quantity;
