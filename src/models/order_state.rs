@@ -9,6 +9,7 @@ use utoipa::ToSchema;
 // ENUM UNTUK STATE
 #[derive(Debug, Serialize, Deserialize, sqlx::Type, Clone, PartialEq, ToSchema)]
 #[sqlx(type_name = "order_status", rename_all = "SCREAMING_SNAKE_CASE")]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum OrderStatus {
     Pending,
     Paid,
