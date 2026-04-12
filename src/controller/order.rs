@@ -22,7 +22,7 @@ fn paginated_response(
     page: Option<i64>,
     limit: Option<i64>,
 ) -> serde_json::Value {
-    let page  = page.unwrap_or(1);
+    let page = page.unwrap_or(1);
     let limit = limit.unwrap_or(20);
     json!({
         "success": true, "message": message, "data": orders,
@@ -41,13 +41,16 @@ pub async fn checkout(
     claims: JwtClaims,
     Json(req): Json<CreateOrderRequest>,
 ) -> Result<(StatusCode, Json<serde_json::Value>), AppError> {
-    req.validate().map_err(|e| AppError::Validation(e.to_string()))?;
+    req.validate()
+        .map_err(|e| AppError::Validation(e.to_string()))?;
 
     let order = svc::checkout(&pool, claims.user_id()?, req).await?;
 
-    Ok((StatusCode::CREATED,
+    Ok((
+        StatusCode::CREATED,
         Json(json!({ "success": true,
-            "message": "Pesanan berhasil dibuat", "data": order }))))
+            "message": "Pesanan berhasil dibuat", "data": order })),
+    ))
 }
 
 // GET /orders/{order_id}
@@ -58,7 +61,9 @@ pub async fn get_order(
 ) -> Result<Json<serde_json::Value>, AppError> {
     let order = svc::get_order(&pool, order_id, claims.user_id()?).await?;
 
-    Ok(Json(json!({ "success": true, "message": "OK", "data": order })))
+    Ok(Json(
+        json!({ "success": true, "message": "OK", "data": order }),
+    ))
 }
 
 // PATCH /orders/{order_id}/payment
@@ -67,9 +72,7 @@ pub async fn payment(
     claims: JwtClaims,
     Path(order_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let order_paid = svc::payment(
-        &pool,claims.user_id()?, order_id,
-    ).await?;
+    let order_paid = svc::payment(&pool, claims.user_id()?, order_id).await?;
 
     Ok(Json(json!({
         "success": true,
@@ -86,7 +89,8 @@ pub async fn confirm_order(
 ) -> Result<(StatusCode, Json<serde_json::Value>), AppError> {
     let order = svc::confirm_order(&pool, order_id, claims.user_id()?).await?;
 
-    Ok((StatusCode::OK,
+    Ok((
+        StatusCode::OK,
         Json(json!({
             "success": true,
             "message": "Pesanan berhasil dikonfirmasi selesai",
@@ -95,7 +99,8 @@ pub async fn confirm_order(
                 "status":       order.status,
                 "completed_at": order.updated_at,
             }
-        }))))
+        })),
+    ))
 }
 
 // PATCH /orders/{order_id}/purchased
@@ -106,7 +111,8 @@ pub async fn purchased(
 ) -> Result<(StatusCode, Json<serde_json::Value>), AppError> {
     let order = svc::purchased(&pool, order_id, claims.user_id()?).await?;
 
-    Ok((StatusCode::OK,
+    Ok((
+        StatusCode::OK,
         Json(json!({
             "success": true,
             "message": "Pesanan berhasil dibeli jastiper",
@@ -115,7 +121,8 @@ pub async fn purchased(
                 "status":       order.status,
                 "completed_at": order.updated_at,
             }
-        }))))
+        })),
+    ))
 }
 
 // PATCH /orders/{order_id}/shipped
@@ -127,7 +134,8 @@ pub async fn shipped(
 ) -> Result<(StatusCode, Json<serde_json::Value>), AppError> {
     let order = svc::shipped(&pool, order_id, claims.user_id()?, req).await?;
 
-    Ok((StatusCode::OK,
+    Ok((
+        StatusCode::OK,
         Json(json!({
             "success": true,
             "message": "Pesanan berhasil dikirim jastiper",
@@ -136,7 +144,8 @@ pub async fn shipped(
                 "status":       order.status,
                 "completed_at": order.updated_at,
             }
-        }))))
+        })),
+    ))
 }
 
 // GET /orders/{order_id}/history
@@ -145,8 +154,7 @@ pub async fn get_order_history(
     claims: JwtClaims,
     Path(order_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let history =
-        svc::get_order_history(&pool, order_id, claims.user_id()?).await?;
+    let history = svc::get_order_history(&pool, order_id, claims.user_id()?).await?;
 
     Ok(Json(json!({
         "success": true,
@@ -162,11 +170,11 @@ pub async fn cancel_order(
     Path(order_id): Path<Uuid>,
     Json(req): Json<CancelRequest>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    req.validate().map_err(|e| AppError::Validation(e.to_string()))?;
-    
-    let updated = svc::cancel_order(
-        &pool, order_id, claims.user_id()?, &claims.role()?, req,
-    ).await?;
+    req.validate()
+        .map_err(|e| AppError::Validation(e.to_string()))?;
+
+    let updated =
+        svc::cancel_order(&pool, order_id, claims.user_id()?, &claims.role()?, req).await?;
 
     Ok(Json(json!({
         "success": true,
@@ -184,12 +192,14 @@ pub async fn my_purchases(
     let page = params.page;
     let limit = params.limit;
 
-    let (orders, total) =
-        svc::my_purchases(&pool, claims.user_id()?, params).await?;
+    let (orders, total) = svc::my_purchases(&pool, claims.user_id()?, params).await?;
 
     Ok(Json(paginated_response(
-        "Riwayat belanja ditemukan", orders, total,
-        page, limit,
+        "Riwayat belanja ditemukan",
+        orders,
+        total,
+        page,
+        limit,
     )))
 }
 
@@ -202,11 +212,13 @@ pub async fn my_sales(
     let page = params.page;
     let limit = params.limit;
 
-    let (orders, total) =
-        svc::my_sales(&pool, claims.user_id()?, params).await?;
+    let (orders, total) = svc::my_sales(&pool, claims.user_id()?, params).await?;
 
     Ok(Json(paginated_response(
-        "Daftar pesanan masuk ditemukan", orders, total,
-        page, limit,
+        "Daftar pesanan masuk ditemukan",
+        orders,
+        total,
+        page,
+        limit,
     )))
 }

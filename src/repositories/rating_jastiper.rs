@@ -1,11 +1,13 @@
+use chrono::Utc;
 use sea_query::{PostgresQueryBuilder, Query};
 use sea_query_binder::SqlxBinder;
 use sqlx::PgPool;
 use uuid::Uuid;
-use chrono::Utc;
 
 use crate::error::{AppError, Result};
-use crate::models::rating_jastiper::{RatingJastiperIden, RatingJastiper, CreateRatingJastiperRequest};
+use crate::models::rating_jastiper::{
+    CreateRatingJastiperRequest, RatingJastiper, RatingJastiperIden,
+};
 
 pub async fn find_by_id(pool: &PgPool, rating_jastiper_id: Uuid) -> Result<Option<RatingJastiper>> {
     let (sql, values) = Query::select()
@@ -18,7 +20,9 @@ pub async fn find_by_id(pool: &PgPool, rating_jastiper_id: Uuid) -> Result<Optio
             RatingJastiperIden::CreatedAt,
         ])
         .from(RatingJastiperIden::RatingJastiper)
-        .and_where(sea_query::Expr::col(RatingJastiperIden::RatingJastiperId).eq(rating_jastiper_id))
+        .and_where(
+            sea_query::Expr::col(RatingJastiperIden::RatingJastiperId).eq(rating_jastiper_id),
+        )
         .build_sqlx(PostgresQueryBuilder);
 
     let row = sqlx::query_as_with::<_, RatingJastiper, _>(&sql, values)
@@ -80,5 +84,7 @@ pub async fn create(
 
     sqlx::query_with(&sql, values).execute(pool).await?;
 
-    find_by_id(pool, rating_jastiper_id).await?.ok_or(AppError::Internal)
+    find_by_id(pool, rating_jastiper_id)
+        .await?
+        .ok_or(AppError::Internal)
 }

@@ -17,7 +17,10 @@ pub(crate) async fn internal_post(url: &str, body: serde_json::Value) -> Result<
     Ok(status)
 }
 
-pub(crate) async fn internal_get(url: &str, body: serde_json::Value) -> Result<(u16, serde_json::Value), AppError> {
+pub(crate) async fn internal_get(
+    url: &str,
+    body: serde_json::Value,
+) -> Result<(u16, serde_json::Value), AppError> {
     let response = reqwest::Client::new()
         .get(url)
         .header("X-Service-Key", service_key())

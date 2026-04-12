@@ -1,7 +1,7 @@
+use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::fmt::Display;
 use std::str::FromStr;
-use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 #[derive(Debug, Serialize, Deserialize, sqlx::Type, Clone, PartialEq, ToSchema)]
@@ -16,7 +16,7 @@ pub enum Role {
 impl Role {
     pub fn as_str(&self) -> &'static str {
         match self {
-            Role::Titipers => "TITIPERS" ,
+            Role::Titipers => "TITIPERS",
             Role::Jastiper => "JASTIPER",
             Role::Admin => "ADMIN",
             Role::System => "SYSTEM",

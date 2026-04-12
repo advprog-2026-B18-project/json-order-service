@@ -1,11 +1,11 @@
+use chrono::Utc;
 use sea_query::{PostgresQueryBuilder, Query};
 use sea_query_binder::SqlxBinder;
 use sqlx::PgPool;
 use uuid::Uuid;
-use chrono::Utc;
 
 use crate::error::{AppError, Result};
-use crate::models::rating_product::{RatingProductIden, RatingProduct, CreateRatingProductRequest};
+use crate::models::rating_product::{CreateRatingProductRequest, RatingProduct, RatingProductIden};
 
 pub async fn find_by_id(pool: &PgPool, rating_product_id: Uuid) -> Result<Option<RatingProduct>> {
     let (sql, values) = Query::select()
@@ -85,5 +85,7 @@ pub async fn create(
 
     sqlx::query_with(&sql, values).execute(pool).await?;
 
-    find_by_id(pool, rating_product_id).await?.ok_or(AppError::Internal)
+    find_by_id(pool, rating_product_id)
+        .await?
+        .ok_or(AppError::Internal)
 }

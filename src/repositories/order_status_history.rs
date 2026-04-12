@@ -4,9 +4,9 @@ use sea_query_binder::SqlxBinder;
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use crate::models::order_status_history::{OrderStatusHistory, OrderStatusHistoryIden};
 use crate::error::Result;
 use crate::models::order_state::OrderStatus;
+use crate::models::order_status_history::{OrderStatusHistory, OrderStatusHistoryIden};
 use crate::models::role::Role;
 
 pub async fn insert_status_history(
@@ -43,10 +43,7 @@ pub async fn insert_status_history(
     Ok(())
 }
 
-pub async fn get_status_history(
-    pool: &PgPool,
-    order_id: Uuid,
-) -> Result<Vec<OrderStatusHistory>> {
+pub async fn get_status_history(pool: &PgPool, order_id: Uuid) -> Result<Vec<OrderStatusHistory>> {
     let (sql, values) = Query::select()
         .columns([
             OrderStatusHistoryIden::StatusHisId,

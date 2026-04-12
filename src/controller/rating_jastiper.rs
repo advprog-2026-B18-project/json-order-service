@@ -9,10 +9,10 @@ use std::sync::Arc;
 use uuid::Uuid;
 use validator::Validate;
 
-use crate::services::rating_jastiper as svc;
 use crate::error::AppError;
 use crate::middleware::auth::JwtClaims;
 use crate::models::rating_jastiper::CreateRatingJastiperRequest;
+use crate::services::rating_jastiper as svc;
 
 // POST /orders/{order_id}/rating/jastiper
 pub async fn submit_rating_jastiper(
@@ -21,11 +21,13 @@ pub async fn submit_rating_jastiper(
     Path(order_id): Path<Uuid>,
     Json(req): Json<CreateRatingJastiperRequest>,
 ) -> Result<(StatusCode, Json<serde_json::Value>), AppError> {
-    req.validate().map_err(|e| AppError::Validation(e.to_string()))?;
+    req.validate()
+        .map_err(|e| AppError::Validation(e.to_string()))?;
 
     let rating = svc::submit_rating_jastiper(&pool, order_id, claims.user_id()?, req).await?;
 
-    Ok((StatusCode::CREATED,
+    Ok((
+        StatusCode::CREATED,
         Json(json!({
             "success": true,
             "message": "Rating berhasil dikirim",
@@ -35,7 +37,8 @@ pub async fn submit_rating_jastiper(
                 "jastiper_rating": rating.jastiper_rating,
                 "created_at":     rating.created_at,
             }
-        }))))
+        })),
+    ))
 }
 
 // GET /orders/{order_id}/rating/jastiper

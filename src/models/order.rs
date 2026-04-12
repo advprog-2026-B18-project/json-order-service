@@ -1,3 +1,6 @@
+use crate::models::order_state::OrderStatus;
+use crate::models::role::Role;
+use crate::models::shipping_address::ShippingAddress;
 use chrono::{DateTime, Utc};
 use sea_query::Iden;
 use serde::{Deserialize, Serialize};
@@ -5,9 +8,6 @@ use serde_json::Value as JsonValue;
 use sqlx::types::Uuid;
 use utoipa::ToSchema;
 use validator::Validate;
-use crate::models::order_state::OrderStatus;
-use crate::models::role::Role;
-use crate::models::shipping_address::ShippingAddress;
 
 #[derive(Iden)]
 pub enum OrderIden {
@@ -92,7 +92,6 @@ pub struct ShippedRequest {
     pub tracking_number: Option<String>,
     pub courier: Option<String>,
 }
-
 
 #[derive(Debug, Deserialize, Validate)]
 pub struct PaymentConfirmedRequest {

@@ -1,10 +1,10 @@
-use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
-use utoipa::ToSchema;
-use sea_query::Iden;
-use uuid::Uuid;
 pub(crate) use crate::models::order_state::OrderStatus;
 use crate::models::role::Role;
+use chrono::{DateTime, Utc};
+use sea_query::Iden;
+use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
+use uuid::Uuid;
 
 #[derive(Iden)]
 pub enum OrderStatusHistoryIden {
@@ -29,4 +29,3 @@ pub struct OrderStatusHistory {
     pub notes: Option<String>,
     pub timestamp: DateTime<Utc>,
 }
-

@@ -1,16 +1,16 @@
 use chrono::Utc;
-use sea_query::{Alias, Cond, Expr, PostgresQueryBuilder, Query};
 use sea_query::Order::{Asc, Desc};
+use sea_query::{Alias, Cond, Expr, PostgresQueryBuilder, Query};
 use sea_query_binder::SqlxBinder;
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use crate::models::order::{CreateOrderRequest, Order, OrderIden};
-use crate::repositories::order_status_history::insert_status_history;
 use crate::error::{AppError, Result};
 use crate::models::filter_pagination::{OrderFilter, PaginationParams, SortOrder};
+use crate::models::order::{CreateOrderRequest, Order, OrderIden};
 use crate::models::order_state::OrderStatus;
 use crate::models::role::Role;
+use crate::repositories::order_status_history::insert_status_history;
 
 pub async fn find_all(
     pool: &PgPool,
@@ -99,7 +99,7 @@ fn build_filter_condition(filter: Option<&OrderFilter>) -> Cond {
         cond = cond.add(
             Expr::col(OrderIden::Status)
                 .cast_as(Alias::new("TEXT"))
-                .eq(status.to_string())
+                .eq(status.to_string()),
         );
     }
 
@@ -200,7 +200,7 @@ pub async fn create(
         &Role::Titipers,
         Some("Pesanan berhasil dibuat"),
     )
-        .await?;
+    .await?;
 
     find_by_id(pool, order_id).await?.ok_or(AppError::Internal)
 }

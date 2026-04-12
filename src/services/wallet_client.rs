@@ -1,11 +1,11 @@
-use serde_json::json;
-use uuid::Uuid;
-use tracing::{debug, warn, error};
 use crate::error::AppError;
+use serde_json::json;
+use tracing::{debug, error, warn};
+use uuid::Uuid;
 
 fn wallet_url() -> String {
-    let url = std::env::var("WALLET_SERVICE_URL")
-        .unwrap_or_else(|_| "http://localhost:8081".to_string());
+    let url =
+        std::env::var("WALLET_SERVICE_URL").unwrap_or_else(|_| "http://localhost:8081".to_string());
     debug!("🌐 [wallet] using URL: {}", url);
     url
 }
@@ -36,14 +36,19 @@ async fn manage_wallet(
     });
 
     debug!("💳 [wallet] {} → POST {}", endpoint, url);
-    debug!("💳 [wallet] payload: user_id={} order_id={} amount={} desc='{}'",
-           user_id, order_id, amount, description);
+    debug!(
+        "💳 [wallet] payload: user_id={} order_id={} amount={} desc='{}'",
+        user_id, order_id, amount, description
+    );
 
     let status = crate::services::http_client::internal_post(&url, body).await?;
 
     match (action, status) {
         (WalletAction::Deduct, 200) => {
-            debug!("✅ [wallet] deduct berhasil user_id={} amount={}", user_id, amount);
+            debug!(
+                "✅ [wallet] deduct berhasil user_id={} amount={}",
+                user_id, amount
+            );
             Ok(())
         }
         (WalletAction::Deduct, 404) => {
@@ -51,27 +56,47 @@ async fn manage_wallet(
             Err(AppError::NotFound("User tidak ditemukan".to_string()))
         }
         (WalletAction::Deduct, 409) => {
-            debug!("ℹ️ [wallet] deduct idempotent (sudah diproses) order_id={}", order_id);
+            debug!(
+                "ℹ️ [wallet] deduct idempotent (sudah diproses) order_id={}",
+                order_id
+            );
             Ok(()) // idempotent
         }
         (WalletAction::Deduct, 422) => {
-            warn!("⚠️ [wallet] saldo tidak mencukupi user_id={} amount={}", user_id, amount);
-            Err(AppError::UnprocessableEntity("Saldo tidak mencukupi".to_string()))
+            warn!(
+                "⚠️ [wallet] saldo tidak mencukupi user_id={} amount={}",
+                user_id, amount
+            );
+            Err(AppError::UnprocessableEntity(
+                "Saldo tidak mencukupi".to_string(),
+            ))
         }
         (WalletAction::Deduct, code) => {
-            error!("❌ [wallet] deduct unexpected status={} user_id={}", code, user_id);
+            error!(
+                "❌ [wallet] deduct unexpected status={} user_id={}",
+                code, user_id
+            );
             Err(AppError::Internal)
         }
         (WalletAction::Refund, 200) => {
-            debug!("✅ [wallet] refund berhasil user_id={} amount={}", user_id, amount);
+            debug!(
+                "✅ [wallet] refund berhasil user_id={} amount={}",
+                user_id, amount
+            );
             Ok(())
         }
         (WalletAction::Refund, 409) => {
-            debug!("ℹ️ [wallet] refund idempotent (sudah direfund) order_id={}", order_id);
+            debug!(
+                "ℹ️ [wallet] refund idempotent (sudah direfund) order_id={}",
+                order_id
+            );
             Ok(()) // 409 = sudah direfund
         }
         (WalletAction::Refund, code) => {
-            error!("❌ [wallet] refund unexpected status={} user_id={}", code, user_id);
+            error!(
+                "❌ [wallet] refund unexpected status={} user_id={}",
+                code, user_id
+            );
             Err(AppError::Internal)
         }
     }
@@ -83,7 +108,10 @@ pub(crate) async fn deduct_wallet(
     amount: i64,
     description: &str,
 ) -> Result<(), AppError> {
-    debug!("💳 [wallet] deduct_wallet user_id={} order_id={} amount={}", user_id, order_id, amount);
+    debug!(
+        "💳 [wallet] deduct_wallet user_id={} order_id={} amount={}",
+        user_id, order_id, amount
+    );
     manage_wallet(WalletAction::Deduct, user_id, order_id, amount, description).await
 }
 
@@ -93,14 +121,14 @@ pub(crate) async fn refund_wallet(
     amount: i64,
     description: &str,
 ) -> Result<(), AppError> {
-    debug!("💳 [wallet] refund_wallet user_id={} order_id={} amount={}", user_id, order_id, amount);
+    debug!(
+        "💳 [wallet] refund_wallet user_id={} order_id={} amount={}",
+        user_id, order_id, amount
+    );
     manage_wallet(WalletAction::Refund, user_id, order_id, amount, description).await
 }
 
-pub(crate) async fn check_wallet(
-    user_id: Uuid,
-    req_amount: i64,
-) -> Result<(), AppError> {
+pub(crate) async fn check_wallet(user_id: Uuid, req_amount: i64) -> Result<(), AppError> {
     debug!("💳 [wallet] deduct_wallet user_id={}", user_id);
 
     let url = format!("{}/internal/wallets/balance-check", wallet_url());
@@ -115,21 +143,34 @@ pub(crate) async fn check_wallet(
         200 => {
             let is_sufficient = body["is_sufficient"].as_bool().unwrap_or(false);
             if is_sufficient {
-                debug!("✅ [wallet] check wallet berhasil untuk user_id={} dengan amount={}", user_id, req_amount);
+                debug!(
+                    "✅ [wallet] check wallet berhasil untuk user_id={} dengan amount={}",
+                    user_id, req_amount
+                );
                 Ok(())
             } else {
-                warn!("⚠️ [wallet] saldo tidak mencukupi user_id={} amount={}", user_id, req_amount);
-                Err(AppError::UnprocessableEntity("Saldo tidak mencukupi".to_string()))
+                warn!(
+                    "⚠️ [wallet] saldo tidak mencukupi user_id={} amount={}",
+                    user_id, req_amount
+                );
+                Err(AppError::UnprocessableEntity(
+                    "Saldo tidak mencukupi".to_string(),
+                ))
             }
         }
         404 => {
-            debug!("✅ [wallet] check wallet gagal untuk user_id={} tidak ditemukan", user_id);
+            debug!(
+                "✅ [wallet] check wallet gagal untuk user_id={} tidak ditemukan",
+                user_id
+            );
             Ok(())
         }
         _ => {
-            error!("❌ [wallet] check wallet unexpected status={} user_id={}", status, user_id);
+            error!(
+                "❌ [wallet] check wallet unexpected status={} user_id={}",
+                status, user_id
+            );
             Err(AppError::Internal)
         }
     }
-
 }

@@ -1,10 +1,10 @@
+use crate::error::AppError;
+use crate::models::role::Role;
+use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::fmt::Display;
 use std::str::FromStr;
-use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
-use crate::error::AppError;
-use crate::models::role::Role;
 
 // ENUM UNTUK STATE
 #[derive(Debug, Serialize, Deserialize, sqlx::Type, Clone, PartialEq, ToSchema)]
@@ -84,7 +84,11 @@ impl OrderMachine {
         self.current_state.current_status()
     }
 
-    pub fn update_status(&mut self, role: &Role, next: &OrderStatus) -> Result<OrderStatus, AppError> {
+    pub fn update_status(
+        &mut self,
+        role: &Role,
+        next: &OrderStatus,
+    ) -> Result<OrderStatus, AppError> {
         let result = self.current_state.update_status(role, next)?;
         self.current_state = make_state(&result);
         Ok(result)
@@ -110,7 +114,7 @@ impl OrderState for PendingState {
         match (next, role) {
             (OrderStatus::Paid, Role::System) => Ok(OrderStatus::Paid),
             _ => Err(AppError::Forbidden(
-                "Status PENDING hanya bisa berubah ke PAID oleh SYSTEM".to_string()
+                "Status PENDING hanya bisa berubah ke PAID oleh SYSTEM".to_string(),
             )),
         }
     }
@@ -119,12 +123,14 @@ impl OrderState for PendingState {
         match role {
             Role::Jastiper | Role::Admin => Ok(()),
             _ => Err(AppError::Forbidden(
-                "Hanya JASTIPER atau ADMIN yang bisa cancel order PENDING".to_string()
+                "Hanya JASTIPER atau ADMIN yang bisa cancel order PENDING".to_string(),
             )),
         }
     }
 
-    fn current_status(&self) -> OrderStatus { OrderStatus::Pending }
+    fn current_status(&self) -> OrderStatus {
+        OrderStatus::Pending
+    }
 }
 
 impl OrderState for PaidState {
@@ -134,7 +140,7 @@ impl OrderState for PaidState {
                 Ok(OrderStatus::Purchased)
             }
             _ => Err(AppError::Forbidden(
-                "Status PAID hanya bisa berubah ke PURCHASED oleh JASTIPER/ADMIN".to_string()
+                "Status PAID hanya bisa berubah ke PURCHASED oleh JASTIPER/ADMIN".to_string(),
             )),
         }
     }
@@ -143,12 +149,14 @@ impl OrderState for PaidState {
         match role {
             Role::Jastiper | Role::Admin => Ok(()),
             _ => Err(AppError::Forbidden(
-                "Hanya JASTIPER atau ADMIN yang bisa cancel order PAID".to_string()
+                "Hanya JASTIPER atau ADMIN yang bisa cancel order PAID".to_string(),
             )),
         }
     }
 
-    fn current_status(&self) -> OrderStatus { OrderStatus::Paid }
+    fn current_status(&self) -> OrderStatus {
+        OrderStatus::Paid
+    }
 }
 
 impl OrderState for PurchasedState {
@@ -158,7 +166,7 @@ impl OrderState for PurchasedState {
                 Ok(OrderStatus::Shipped)
             }
             _ => Err(AppError::Forbidden(
-                "Status PURCHASED hanya bisa berubah ke SHIPPED oleh JASTIPER/ADMIN".to_string()
+                "Status PURCHASED hanya bisa berubah ke SHIPPED oleh JASTIPER/ADMIN".to_string(),
             )),
         }
     }
@@ -167,12 +175,14 @@ impl OrderState for PurchasedState {
         match role {
             Role::Jastiper | Role::Admin => Ok(()),
             _ => Err(AppError::Forbidden(
-                "Hanya JASTIPER atau ADMIN yang bisa cancel order PURCHASED".to_string()
+                "Hanya JASTIPER atau ADMIN yang bisa cancel order PURCHASED".to_string(),
             )),
         }
     }
 
-    fn current_status(&self) -> OrderStatus { OrderStatus::Purchased }
+    fn current_status(&self) -> OrderStatus {
+        OrderStatus::Purchased
+    }
 }
 
 impl OrderState for ShippedState {
@@ -182,7 +192,7 @@ impl OrderState for ShippedState {
                 Ok(OrderStatus::Completed)
             }
             _ => Err(AppError::Forbidden(
-                "Status SHIPPED hanya bisa berubah ke COMPLETED oleh TITIPERS/ADMIN".to_string()
+                "Status SHIPPED hanya bisa berubah ke COMPLETED oleh TITIPERS/ADMIN".to_string(),
             )),
         }
     }
@@ -191,28 +201,32 @@ impl OrderState for ShippedState {
         match role {
             Role::Admin => Ok(()),
             _ => Err(AppError::Forbidden(
-                "Hanya ADMIN yang bisa cancel order SHIPPED".to_string()
+                "Hanya ADMIN yang bisa cancel order SHIPPED".to_string(),
             )),
         }
     }
 
-    fn current_status(&self) -> OrderStatus { OrderStatus::Shipped }
+    fn current_status(&self) -> OrderStatus {
+        OrderStatus::Shipped
+    }
 }
 
 impl OrderState for CompletedState {
     fn update_status(&self, _role: &Role, _next: &OrderStatus) -> Result<OrderStatus, AppError> {
         Err(AppError::UnprocessableEntity(
-            "Order sudah COMPLETED, tidak bisa diubah".to_string()
+            "Order sudah COMPLETED, tidak bisa diubah".to_string(),
         ))
     }
 
     fn cancel(&self, _role: &Role) -> Result<(), AppError> {
         Err(AppError::UnprocessableEntity(
-            "Order sudah COMPLETED, tidak bisa dibatalkan".to_string()
+            "Order sudah COMPLETED, tidak bisa dibatalkan".to_string(),
         ))
     }
 
-    fn current_status(&self) -> OrderStatus { OrderStatus::Completed }
+    fn current_status(&self) -> OrderStatus {
+        OrderStatus::Completed
+    }
 }
 
 impl OrderState for RefundingState {
@@ -222,66 +236,69 @@ impl OrderState for RefundingState {
                 Ok(OrderStatus::Completed)
             }
             _ => Err(AppError::UnprocessableEntity(
-                "Order sedang dalam proses REFUNDING, tidak bisa diubah".to_string()
+                "Order sedang dalam proses REFUNDING, tidak bisa diubah".to_string(),
             )),
         }
     }
 
     fn cancel(&self, _role: &Role) -> Result<(), AppError> {
         Err(AppError::UnprocessableEntity(
-            "Order sedang dalam proses REFUNDING, tidak bisa dibatalkan".to_string()
+            "Order sedang dalam proses REFUNDING, tidak bisa dibatalkan".to_string(),
         ))
     }
 
-    fn current_status(&self) -> OrderStatus { OrderStatus::Refunding }
-
+    fn current_status(&self) -> OrderStatus {
+        OrderStatus::Refunding
+    }
 }
 
 impl OrderState for RefundFailedState {
     fn update_status(&self, role: &Role, next: &OrderStatus) -> Result<OrderStatus, AppError> {
         match (next, role) {
-            (OrderStatus::Completed, Role::Admin) => {
-                Ok(OrderStatus::Completed)
-            }
+            (OrderStatus::Completed, Role::Admin) => Ok(OrderStatus::Completed),
             _ => Err(AppError::UnprocessableEntity(
-                "Order dalam status REFUNDING hanya bisa diubah oleh admin".to_string()
+                "Order dalam status REFUNDING hanya bisa diubah oleh admin".to_string(),
             )),
         }
     }
 
     fn cancel(&self, _role: &Role) -> Result<(), AppError> {
         Err(AppError::UnprocessableEntity(
-            "Order sedang dalam proses REFUND_FAILED, tidak bisa dibatalkan".to_string()
+            "Order sedang dalam proses REFUND_FAILED, tidak bisa dibatalkan".to_string(),
         ))
     }
 
-    fn current_status(&self) -> OrderStatus { OrderStatus::RefundFailed }
+    fn current_status(&self) -> OrderStatus {
+        OrderStatus::RefundFailed
+    }
 }
 
 impl OrderState for CancelledState {
     fn update_status(&self, _role: &Role, _next: &OrderStatus) -> Result<OrderStatus, AppError> {
         Err(AppError::UnprocessableEntity(
-            "Order sudah CANCELLED, tidak bisa diubah".to_string()
+            "Order sudah CANCELLED, tidak bisa diubah".to_string(),
         ))
     }
 
     fn cancel(&self, _role: &Role) -> Result<(), AppError> {
         Err(AppError::UnprocessableEntity(
-            "Order sudah CANCELLED".to_string()
+            "Order sudah CANCELLED".to_string(),
         ))
     }
 
-    fn current_status(&self) -> OrderStatus { OrderStatus::Cancelled }
+    fn current_status(&self) -> OrderStatus {
+        OrderStatus::Cancelled
+    }
 }
 
 // CONSTRUCTOR UNTUK STATE MACHINE
 
 fn make_state(status: &OrderStatus) -> Box<dyn OrderState> {
     match status {
-        OrderStatus::Pending   => Box::new(PendingState),
-        OrderStatus::Paid      => Box::new(PaidState),
+        OrderStatus::Pending => Box::new(PendingState),
+        OrderStatus::Paid => Box::new(PaidState),
         OrderStatus::Purchased => Box::new(PurchasedState),
-        OrderStatus::Shipped   => Box::new(ShippedState),
+        OrderStatus::Shipped => Box::new(ShippedState),
         OrderStatus::Completed => Box::new(CompletedState),
         OrderStatus::Refunding => Box::new(RefundingState),
         OrderStatus::RefundFailed => Box::new(RefundFailedState),

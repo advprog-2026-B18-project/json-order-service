@@ -1,8 +1,8 @@
+use crate::models::order_state::OrderStatus;
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
 use utoipa::ToSchema;
 use uuid::Uuid;
-use crate::models::order_state::OrderStatus;
 
 #[derive(Debug, Deserialize, ToSchema, Default)]
 pub struct OrderFilter {
