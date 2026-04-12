@@ -5,7 +5,7 @@ edition = "2024"
 
 [dependencies]
 # Web
-axum         = "0.7"
+axum         = { version = "0.7", features = ["macros"] }
 axum-extra   = { version = "0.9", features = ["cookie", "typed-header"] }
 tokio        = { version = "1", features = ["full"] }
 tower-http   = { version = "0.5", features = ["cors", "trace"] }
