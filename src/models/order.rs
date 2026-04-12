@@ -6,8 +6,6 @@ use sqlx::types::Uuid;
 use utoipa::ToSchema;
 use validator::Validate;
 use crate::models::order_state::OrderStatus;
-use crate::models::rating_jastiper::RatingJastiper;
-use crate::models::rating_product::RatingProduct;
 use crate::models::role::Role;
 use crate::models::shipping_address::ShippingAddress;
 
@@ -79,17 +77,22 @@ pub struct UpdateStatusRequest {
     /// Wajib diisi saat status = Shipped
     pub courier: Option<String>,
 
-    /// Sunnah diisi saat status = Completed
-    pub rating_jast: Option<RatingJastiper>,
-    pub rating_product: Option<RatingProduct>,
+    /// Diisi saat status = Refunding (cancel)
+    pub cancellation_reason: Option<String>,
 }
 
 #[derive(Debug, Deserialize, ToSchema, Validate)]
 pub struct CancelRequest {
-    pub cancellation_reason: String,
     #[validate(length(max = 500))]
-    pub notes: Option<String>,
+    pub cancellation_reason: String,
 }
+
+#[derive(Debug, Deserialize, ToSchema, Validate)]
+pub struct ShippedRequest {
+    pub tracking_number: Option<String>,
+    pub courier: Option<String>,
+}
+
 
 #[derive(Debug, Deserialize, Validate)]
 pub struct PaymentConfirmedRequest {

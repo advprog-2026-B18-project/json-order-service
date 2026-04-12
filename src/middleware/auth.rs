@@ -2,10 +2,12 @@ use axum::{extract::FromRequestParts, http::request::Parts};
 use base64::{Engine, engine::general_purpose};
 use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode};
 use serde::{Deserialize, Serialize};
+use std::str::FromStr;
 use uuid::Uuid;
 use tracing::warn;
 
 use crate::error::AppError;
+use crate::models::role::Role;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct JwtClaims {
@@ -23,6 +25,11 @@ impl JwtClaims {
     pub fn user_id(&self) -> Result<Uuid, AppError> {
         Uuid::parse_str(&self.sub)
             .map_err(|_| AppError::Unauthorized("Token subject bukan UUID valid".to_string()))
+    }
+
+    pub fn role(&self) -> Result<Role, AppError> {
+        Role::from_str(&self.role)
+            .map_err(|e| AppError::Unauthorized(format!("Role tidak valid: {}", e)))
     }
 }
 

@@ -60,7 +60,7 @@ impl Display for OrderStatus {
 }
 
 // TRAIT UNTUK STATE
-pub trait OrderState {
+pub trait OrderState: Send {
     fn update_status(&self, role: &Role, next: &OrderStatus) -> Result<OrderStatus, AppError>;
 
     fn cancel(&self, role: &Role) -> Result<(), AppError>;
@@ -249,7 +249,7 @@ impl OrderState for RefundFailedState {
         }
     }
 
-    fn cancel(&self, role: &Role) -> Result<(), AppError> {
+    fn cancel(&self, _role: &Role) -> Result<(), AppError> {
         Err(AppError::UnprocessableEntity(
             "Order sedang dalam proses REFUND_FAILED, tidak bisa dibatalkan".to_string()
         ))
