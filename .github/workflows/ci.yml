@@ -107,17 +107,48 @@ jobs:
           INTERNAL_SERVICE_KEY: test-key
         run: |
           cargo tarpaulin \
-            --out Lcov \
-            --output-dir coverage \
-            --exclude-files "src/main.rs" \
-            --timeout 180 \
-            -- --test-threads=1
+          --out Lcov \
+          --output-dir coverage \
+          --exclude-files "src/main.rs" \
+          --timeout 180 \
+          -- --test-threads=1
+
+      - name: Convert LCOV to Sonar Generic XML
+        run: |
+          python3 -c '
+          import sys, os
+          
+          lcov_path = "coverage/lcov.info"
+          sonar_path = "coverage/sonar-coverage.xml"
+          workspace = os.environ.get("GITHUB_WORKSPACE", "") + "/"
+          
+          with open(lcov_path, "r") as f_in, open(sonar_path, "w") as f_out:
+              f_out.write("<coverage version=\"1\">\n")
+              for line in f_in:
+                  line = line.strip()
+                  if line.startswith("SF:"):
+                      file_path = line[3:]
+                      # Pastikan path relatif agar dikenali SonarCloud
+                      if file_path.startswith(workspace):
+                          file_path = file_path[len(workspace):]
+                      f_out.write(f"  <file path=\"{file_path}\">\n")
+                  elif line.startswith("DA:"):
+                      parts = line[3:].split(",")
+                      line_num = parts[0]
+                      covered = "true" if int(parts[1]) > 0 else "false"
+                      f_out.write(f"    <lineToCover lineNumber=\"{line_num}\" covered=\"{covered}\"/>\n")
+                  elif line == "end_of_record":
+                      f_out.write("  </file>\n")
+              f_out.write("</coverage>\n")
+          '
 
       - name: Upload coverage report
         uses: actions/upload-artifact@v4
         with:
           name: coverage-report
-          path: coverage/lcov.info
+          path: |
+            coverage/lcov.info
+            coverage/sonar-coverage.xml
 
   # ─────────────────────────────────────────────
   # 3. SONARCLOUD — Static analysis
@@ -158,7 +189,8 @@ jobs:
           args: >
             -Dsonar.organization=advprog-2026-b18-project
             -Dsonar.projectKey=advprog-2026-B18-project_json-order-service
-            -Dsonar.coverageReportPaths=coverage/lcov.info
+            -Dsonar.coverageReportPaths=coverage/sonar-coverage.xml
+            -Dsonar.rust.clippy.reportPaths=clippy-report.json
 
   # ─────────────────────────────────────────────
   # 4. BUILD — Docker image

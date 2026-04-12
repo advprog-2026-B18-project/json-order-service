@@ -1,2 +1,4 @@
 pub(crate) mod order;
-mod rating;
+pub(crate) mod order_status_history;
+pub mod rating_jastiper;
+pub mod rating_product;
