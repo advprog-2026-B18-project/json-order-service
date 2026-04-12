@@ -54,10 +54,6 @@ pub async fn find_all(
             OrderIden::CreatedAt,
             OrderIden::UpdatedAt,
         ])
-        .expr_as(
-            Expr::cust(r#"cancelled_by::TEXT"#),
-            Alias::new("cancelled_by"),
-        )
         .from(OrderIden::Order)
         .cond_where(condition.clone())
         .order_by(sort_col, sort_order)
@@ -134,10 +130,6 @@ pub async fn find_by_id(pool: &PgPool, order_id: Uuid) -> Result<Option<Order>> 
             OrderIden::CreatedAt,
             OrderIden::UpdatedAt,
         ])
-        .expr_as(
-            Expr::cust(r#"cancelled_by::TEXT"#),
-            Alias::new("cancelled_by"),
-        )
         .from(OrderIden::Order)
         .and_where(Expr::col(OrderIden::OrderId).eq(order_id))
         .build_sqlx(PostgresQueryBuilder);
@@ -222,6 +214,7 @@ pub async fn update(
     notes: Option<&str>,
     tracking_number: Option<&str>,
     courier: Option<&str>,
+    cancellation_reason: Option<&str>,
 ) -> Result<Order> {
     let now = Utc::now();
 
@@ -233,7 +226,7 @@ pub async fn update(
             Expr::cust(format!("'{}'::order_status", new_status.to_string())),
         )
         .value(OrderIden::UpdatedAt, now)
-        .and_where(sea_query::Expr::col(OrderIden::OrderId).eq(order_id));
+        .and_where(Expr::col(OrderIden::OrderId).eq(order_id));
 
     if *new_status == OrderStatus::Completed {
         query.value(OrderIden::CompletedAt, now);
@@ -243,6 +236,9 @@ pub async fn update(
     }
     if let Some(c) = courier {
         query.value(OrderIden::Courier, c);
+    }
+    if let Some(cr) = cancellation_reason {
+        query.value(OrderIden::CancellationReason, cr);
     }
 
     let (sql, values) = query.build_sqlx(PostgresQueryBuilder);

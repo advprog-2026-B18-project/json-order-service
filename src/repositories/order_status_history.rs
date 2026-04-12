@@ -4,10 +4,7 @@ use sea_query_binder::SqlxBinder;
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use crate::error::AppError;
-use crate::models::order::{Order, OrderIden};
 use crate::models::order_status_history::{OrderStatusHistory, OrderStatusHistoryIden};
-use crate::repositories::order::find_by_id;
 use crate::error::Result;
 use crate::models::order_state::OrderStatus;
 use crate::models::role::Role;
