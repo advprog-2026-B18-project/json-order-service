@@ -2,7 +2,6 @@ use axum::{
     Json,
     extract::{Path, State},
 };
-use reqwest::StatusCode;
 use serde_json::json;
 use sqlx::PgPool;
 use std::sync::Arc;
@@ -10,7 +9,7 @@ use axum::http::HeaderMap;
 use uuid::Uuid;
 use crate::error::AppError;
 use crate::middleware::security_config::validate_service_key;
-use crate::models::order_request::{PaymentConfirmedRequest, RefundConfirmedRequest};
+use crate::models::order::{PaymentConfirmedRequest, RefundConfirmedRequest};
 use crate::services::order_internal as order_internal_svc;
 
 // GET /internal/orders/{order_id}/payment-info
@@ -41,8 +40,8 @@ pub async fn payment_info(
 pub async fn payment_confirmed(
     State(pool): State<Arc<PgPool>>,
     Path(order_id): Path<Uuid>,
-    headers: HeaderMap,                         // ← Headers dulu
-    Json(req): Json<PaymentConfirmedRequest>,   // ← Body/Json terakhir
+    headers: HeaderMap,
+    Json(req): Json<PaymentConfirmedRequest>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     validate_service_key(&headers)?;
 

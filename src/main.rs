@@ -30,14 +30,21 @@ async fn main() {
                post(controller::order::checkout))
         .route("/orders/{order_id}",
                get(controller::order::get_order))
-        .route("/orders/{order_id}/history",
-               get(controller::order::get_order_history))
-        .route("/orders/{order_id}/status",
-               patch(controller::order::update_status))
+        .route("/orders/{order_id}/payment",
+               patch(controller::order::payment))
         .route("/orders/:order_id/confirm",
                patch(controller::order::confirm_order))
+        .route("/orders/:order_id/purchased",
+               patch(controller::order::purchased))
+        .route("/orders/:order_id/shipped",
+               patch(controller::order::shipped))
+
+        .route("/orders/{order_id}/history",
+               get(controller::order::get_order_history))
+
         .route("/orders/{order_id}/cancel",
                post(controller::order::cancel_order))
+
         .route("/orders/my/purchases",
                get(controller::order::my_purchases))
         .route("/orders/my/sales",
