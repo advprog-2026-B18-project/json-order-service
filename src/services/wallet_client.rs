@@ -41,8 +41,6 @@ async fn manage_wallet(
 
     let status = crate::services::http_client::internal_post(&url, body).await?;
 
-    debug!("💳 [wallet] {} response: HTTP {}", endpoint, status);
-
     match (action, status) {
         (WalletAction::Deduct, 200) => {
             debug!("✅ [wallet] deduct berhasil user_id={} amount={}", user_id, amount);

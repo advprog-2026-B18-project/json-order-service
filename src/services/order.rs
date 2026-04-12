@@ -4,7 +4,7 @@ use serde_json::json;
 use tracing::{debug, info, warn, error};
 
 use crate::error::AppError;
-use crate::models::order::{CancelRequest, CreateOrderRequest, Order, UpdateStatusRequest};
+use crate::models::order::{CancelRequest, CreateOrderRequest, Order, ShippedRequest, UpdateStatusRequest};
 use crate::models::order_status_history::{OrderStatus, OrderStatusHistory};
 use crate::models::filter_pagination::{OrderFilter, PaginationParams};
 use crate::models::order_state::OrderMachine;
@@ -13,7 +13,7 @@ use crate::repositories::{
     order as order_repo,
     order_status_history as history_repo
 };
-use crate::services::inventory_client::{confirm_stock, fetch_product, release_stock, reserve_stock};
+use crate::services::inventory_client::{fetch_product, release_stock, reserve_stock};
 use crate::services::wallet_client::{check_wallet, deduct_wallet, refund_wallet};
 
 // ── checkout ──────────────────────────────────────────────────────
@@ -86,42 +86,6 @@ pub async fn checkout(
     }
 }
 
-// ── payment ──────────────────────────────────────────────────────
-pub async fn payment(
-    pool: &PgPool,
-    titipers_id: Uuid,
-    order_id: Uuid,
-) -> Result<Order, AppError> {
-    let order = order_repo::find_by_id(pool, order_id).await?
-        .ok_or_else(|| AppError::NotFound("Pesanan tidak ditemukan".to_string()))?;
-
-    if order.titipers_id != titipers_id {
-        return Err(AppError::Forbidden("Bukan pemilik order".to_string()));
-    }
-
-    if order.status != OrderStatus::Pending {
-        return Err(AppError::Conflict(
-            format!("Status harus PENDING, sekarang {:?}", order.status)
-        ));
-    }
-
-    let desc = format!("Pembayaran Order #{}", order_id);
-    if let Err(e) = deduct_wallet(titipers_id, order_id, order.total_price, &desc).await {
-        error!("❌ [payment] deduct_wallet gagal: {:?}", e);
-        return Err(e);
-    }
-
-    let result = order_repo::update(
-        pool, order_id, &OrderStatus::Paid,
-        &titipers_id.to_string(), &Role::Titipers,
-        Some("Pembayaran berhasil"),
-        None, None,
-    ).await?;
-
-    info!("✅ [payment] wallet deducted, wallet service sudah menginfirmasi pembayaran");
-    Ok(result)
-}
-
 // ── get_order ─────────────────────────────────────────────────────
 pub async fn get_order(
     pool: &PgPool,
@@ -146,23 +110,6 @@ pub async fn get_order(
 
     debug!("✅ [get_order] found order_id={} status={:?}", order.order_id, order.status);
     Ok(order)
-}
-
-// ── get_order_history ─────────────────────────────────────────────
-pub async fn get_order_history(
-    pool: &PgPool,
-    order_id: Uuid,
-    requester_id: Uuid,
-) -> Result<Vec<OrderStatusHistory>, AppError> {
-    debug!("📜 [get_order_history] order_id={} requester_id={}", order_id, requester_id);
-
-    get_order(pool, order_id, requester_id).await?;
-
-    let history = history_repo::get_status_history(pool, order_id).await
-        .map_err(|e| { error!("❌ [get_order_history] DB error: {:?}", e); e })?;
-
-    debug!("✅ [get_order_history] found {} entries", history.len());
-    Ok(history)
 }
 
 // ── update_status ─────────────────────────────────────────────────
@@ -212,14 +159,7 @@ pub async fn update_status(
                 ));
             }
         }
-        OrderStatus::Completed => {
-        }
         _ => {
-            if req.rating_product.is_some() || req.rating_jast.is_some() {
-                return Err(AppError::UnprocessableEntity(
-                    "Rating hanya bisa diisi saat status COMPLETED".to_string()
-                ));
-            }
         }
     }
 
@@ -232,28 +172,134 @@ pub async fn update_status(
         req.notes.as_deref(),
         req.tracking_number.as_deref(),
         req.courier.as_deref(),
+        req.cancellation_reason.as_deref(),
     ).await
         .map_err(|e| { error!("❌ [update_order] DB error: {:?}", e); e })?;
 
-    if req.status == OrderStatus::Completed {
-        // TODO
-        let product_id: Uuid = serde_json::from_value(
-            result.product_snapshot["product_id"].clone()
-        ).unwrap_or(result.product_id);
-
-        debug!("✅ [update_status] order Completed, confirming stock product_id={}", product_id);
-
-        let rating = req.rating_product.map(|r| r.product_rating as f64);
-
-        if let Err(e) = confirm_stock(product_id, order_id, rating).await {
-            error!("⚠️ [update_status] confirm_stock gagal (non-fatal): {:?}", e);
-        } else {
-            info!("✅ [update_status] stock confirmed permanently product_id={}", product_id);
-        }
-    }
-
     info!("✅ [update_status] order_id={} status updated to {:?}", order_id, req.status);
     Ok(result)
+}
+
+// ── payment ──────────────────────────────────────────────────────
+pub async fn payment(
+    pool: &PgPool,
+    titipers_id: Uuid,
+    order_id: Uuid,
+) -> Result<Order, AppError> {
+    let order = order_repo::find_by_id(pool, order_id).await?
+        .ok_or_else(|| AppError::NotFound("Pesanan tidak ditemukan".to_string()))?;
+
+    if order.titipers_id != titipers_id {
+        return Err(AppError::Forbidden("Bukan pemilik order".to_string()));
+    }
+
+    if order.status != OrderStatus::Pending {
+        return Err(AppError::Conflict(
+            format!("Status harus PENDING, sekarang {:?}", order.status)
+        ));
+    }
+
+    let desc = format!("Pembayaran Order #{}", order_id);
+    if let Err(e) = deduct_wallet(titipers_id, order_id, order.total_price, &desc).await {
+        error!("❌ [payment] deduct_wallet gagal: {:?}", e);
+        return Err(e);
+    }
+    info!("✅ [payment] wallet deducted, wallet service sudah menginfirmasi pembayaran");
+
+    let result = update_status(
+        pool, order_id, titipers_id, &Role::System,
+        UpdateStatusRequest {
+            status: OrderStatus::Paid,
+            notes: Some("Pembayaran berhasil dilakukan titipers".to_string()),
+            tracking_number: None,
+            courier: None,
+            cancellation_reason: None,
+        },
+    ).await
+     .map_err(|e| { error!("❌ [payment] update_status gagal: {:?}", e); e })?;
+
+    Ok(result)
+}
+
+// ── confirm_order ─────────────────────────────────────────────────
+pub async fn confirm_order(
+    pool: &PgPool,
+    titipers_id: Uuid,
+    order_id: Uuid,
+)-> Result<Order, AppError> {
+    let result = update_status(
+        pool, order_id, titipers_id, &Role::Titipers,
+        UpdateStatusRequest {
+            status: OrderStatus::Completed,
+            notes: Some("Order sudah diterima oleh titipers".to_string()),
+            tracking_number: None,
+            courier: None,
+            cancellation_reason: None,
+        },
+    ).await
+        .map_err(|e| { error!("❌ [payment] update_status gagal: {:?}", e); e })?;
+
+    Ok(result)
+}
+
+// ── purchased ─────────────────────────────────────────────────────
+pub async fn purchased(
+    pool: &PgPool,
+    order_id: Uuid,
+    jastiper_id: Uuid,
+)-> Result<Order, AppError> {
+    let result = update_status(
+        pool, order_id, jastiper_id, &Role::Jastiper,
+        UpdateStatusRequest {
+            status: OrderStatus::Purchased,
+            notes: Some("Order sudah dibeli oleh jastiper".to_string()),
+            tracking_number: None,
+            courier: None,
+            cancellation_reason: None,
+        },
+    ).await
+        .map_err(|e| { error!("❌ [payment] update_status gagal: {:?}", e); e })?;
+
+    Ok(result)
+}
+
+// ── shipped ─────────────────────────────────────────────────────
+pub async fn shipped (
+    pool: &PgPool,
+    order_id: Uuid,
+    jastiper_id: Uuid,
+    req: ShippedRequest
+)-> Result<Order, AppError> {
+    let result = update_status(
+        pool, order_id, jastiper_id, &Role::Jastiper,
+        UpdateStatusRequest {
+            status: OrderStatus::Shipped,
+            notes: Some("Order sudah dikirim oleh jastiper".to_string()),
+            tracking_number: req.tracking_number,
+            courier: req.courier,
+            cancellation_reason: None,
+        },
+    ).await
+        .map_err(|e| { error!("❌ [payment] update_status gagal: {:?}", e); e })?;
+
+    Ok(result)
+}
+
+// ── get_order_history ─────────────────────────────────────────────
+pub async fn get_order_history(
+    pool: &PgPool,
+    order_id: Uuid,
+    requester_id: Uuid,
+) -> Result<Vec<OrderStatusHistory>, AppError> {
+    debug!("📜 [get_order_history] order_id={} requester_id={}", order_id, requester_id);
+
+    get_order(pool, order_id, requester_id).await?;
+
+    let history = history_repo::get_status_history(pool, order_id).await
+        .map_err(|e| { error!("❌ [get_order_history] DB error: {:?}", e); e })?;
+
+    debug!("✅ [get_order_history] found {} entries", history.len());
+    Ok(history)
 }
 
 // ── cancel_order ──────────────────────────────────────────────────
@@ -266,25 +312,20 @@ pub async fn cancel_order(
 ) -> Result<Order, AppError> {
     info!("🚫 [cancel_order] order_id={} requester_id={} role={}", order_id, requester_id, role);
 
-    let order = order_repo::find_by_id(pool, order_id).await
-        .map_err(|e| { error!("❌ [cancel_order] DB error: {:?}", e); e })?
-        .ok_or_else(|| {
-            warn!("⚠️ [cancel_order] order not found: {}", order_id);
-            AppError::NotFound("Pesanan tidak ditemukan".to_string())
-        })?;
-
-    debug!("📋 [cancel_order] current status={:?}", order.status);
-
-    debug!("💾 [cancel_order] saving cancellation to DB");
-    let updated = order_repo::update(
-        pool, order_id, &OrderStatus::Refunding,
-        &requester_id.to_string(), &role,
-        req.notes.as_deref(),
-        None, None,
+    let updated = update_status(
+        pool, order_id, requester_id, role,
+        UpdateStatusRequest {
+            status: OrderStatus::Refunding,
+            notes: Some(format!("Order dibatalkan oleh {}", role).to_string()),
+            tracking_number: None,
+            courier: None,
+            cancellation_reason: Some(req.cancellation_reason.clone()),
+        },
     ).await
-        .map_err(|e| { error!("❌ [cancel_order] repo::cancel_order gagal: {:?}", e); e })?;
+        .map_err(|e| { error!("❌ [payment] update_status gagal: {:?}", e); e })?;
+    info!("✅ [cancel_order] order status updated to REFUNDING, proceeding with stock release and wallet refund");
 
-    // TODO
+
     let pid: Uuid =
         serde_json::from_value(updated.product_snapshot["product_id"].clone())
             .unwrap_or(updated.product_id);
@@ -296,7 +337,6 @@ pub async fn cancel_order(
            updated.titipers_id, updated.total_price);
     let _ = refund_wallet(updated.titipers_id, order_id, updated.total_price, &rd).await;
 
-    info!("✅ [cancel_order] order_id={} cancelled successfully", order_id);
     Ok(updated)
 }
 

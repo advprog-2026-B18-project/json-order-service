@@ -3,10 +3,11 @@ use tracing::info;
 use uuid::Uuid;
 
 use crate::error::AppError;
-use crate::models::order::{Order, PaymentConfirmedRequest, RefundConfirmedRequest};
+use crate::models::order::{Order, PaymentConfirmedRequest, RefundConfirmedRequest, UpdateStatusRequest};
 use crate::models::order_status_history::OrderStatus;
 use crate::models::role::Role;
 use crate::repositories::order as order_repo;
+use crate::services::order::update_status;
 
 pub async fn get_order_internal(
     pool: &PgPool,
@@ -43,11 +44,15 @@ pub async fn payment_confirmed(
     info!("✅ [payment_confirmed] order_id={} payment dikonfirmasi amount={}",
         order_id, req.amount_deducted);
 
-    let result = order_repo::update(
-        pool, order_id, &OrderStatus::Paid,
-        "SYSTEM", &Role::System,
-        Some("Pembayaran dikonfirmasi dari Modul Wallet"),
-        None, None,
+    let result = update_status(
+        pool, order_id, Uuid::nil(), &Role::System,
+        UpdateStatusRequest {
+            status: OrderStatus::Paid,
+            notes: Some("Pembayaran dikonfirmasi dari Modul Wallet".to_string()),
+            tracking_number: None,
+            courier: None,
+            cancellation_reason: None,
+        }
     ).await?;
 
     Ok(result)
@@ -80,11 +85,15 @@ pub async fn refund_confirmed(
     info!("✅ [refund_confirmed] order_id={} refund dikonfirmasi amount={}",
           order_id, req.amount_refunded);
 
-    let result = order_repo::update(
-        pool, order_id, &OrderStatus::Cancelled,
-        "SYSTEM", &Role::System,
-        Some("Refund dikonfirmasi dari Modul Wallet"),
-        None, None,
+    let result = update_status(
+        pool, order_id, Uuid::nil(), &Role::System,
+        UpdateStatusRequest {
+            status: OrderStatus::Cancelled,
+            notes: Some("Refund dikonfirmasi dari Modul Wallet".to_string()),
+            tracking_number: None,
+            courier: None,
+            cancellation_reason: None,
+        }
     ).await?;
 
     Ok(result)

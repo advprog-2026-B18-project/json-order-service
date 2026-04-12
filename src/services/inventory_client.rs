@@ -26,6 +26,8 @@ async fn manage_stock(
         StockAction::Release => "release",
     };
 
+    debug!("📦 [inventory] {} stock product_id={} order_id={} qty={}", suffix, product_id, order_id, quantity);
+
     let url = format!(
         "{}/internal/products/{}/stock/{}",
         inventory_url(),
@@ -33,15 +35,10 @@ async fn manage_stock(
         suffix
     );
 
-    debug!("📦 [inventory] {} stock → POST {}", suffix, url);
-    debug!("📦 [inventory] payload: order_id={} quantity={}", order_id, quantity);
-
     let status = crate::services::http_client::internal_post(
         &url,
         json!({ "order_id": order_id, "quantity": quantity }),
     ).await?;
-
-    debug!("📦 [inventory] {} stock response: HTTP {}", suffix, status);
 
     match status {
         200 => {
@@ -85,50 +82,6 @@ pub(crate) async fn release_stock(
 ) -> Result<(), AppError> {
     debug!("📦 [inventory] release_stock product_id={} order_id={} qty={}", product_id, order_id, quantity);
     manage_stock(StockAction::Release, product_id, order_id, quantity).await
-}
-
-pub(crate) async fn confirm_stock(
-    product_id: Uuid,
-    order_id: Uuid,
-    rating: Option<f64>,
-) -> Result<(), AppError> {
-    let url = format!(
-        "{}/internal/products/{}/post-order",
-        inventory_url(),
-        product_id,
-    );
-
-    let payload = json!({
-        "order_id": order_id,
-        "action":   "CONFIRM",
-        "rating":   rating,
-    });
-
-    debug!("✅ [inventory] confirm_stock → POST {}", url);
-    debug!("✅ [inventory] payload: order_id={} rating={:?}", order_id, rating);
-
-    let status = crate::services::http_client::internal_post(&url, payload).await?;
-
-    debug!("✅ [inventory] confirm_stock response: HTTP {}", status);
-
-    match status {
-        200 => {
-            debug!("✅ [inventory] confirm_stock berhasil product_id={}", product_id);
-            Ok(())
-        }
-        404 => {
-            warn!("⚠️ [inventory] produk tidak ditemukan saat confirm product_id={}", product_id);
-            Ok(())
-        }
-        409 => {
-            debug!("ℹ️ [inventory] confirm_stock idempotent (sudah dikonfirmasi) order_id={}", order_id);
-            Ok(())
-        }
-        code => {
-            error!("❌ [inventory] confirm_stock unexpected status={} product_id={}", code, product_id);
-            Ok(())
-        }
-    }
 }
 
 pub(crate) async fn fetch_product(product_id: Uuid) -> Result<serde_json::Value, AppError> {
@@ -181,8 +134,10 @@ pub(crate) async fn send_product_rating(
     order_id: Uuid,
     rating: f64,
     review: Option<&str>,
-    product_images: &[String],
+    product_images: Vec<&str>,
 ) -> Result<(), AppError> {
+    debug!("⭐ [inventory] send_product_rating product_id={} order_id={}", product_id, order_id);
+
     let url = format!(
         "{}/internal/products/{}/post-order",
         inventory_url(),
@@ -193,15 +148,11 @@ pub(crate) async fn send_product_rating(
         "order_id":       order_id,
         "action":         "CONFIRM",
         "rating":         rating,
-        "review":         review,
+        "review_text":    review,
         "product_images": product_images,
     });
 
-    debug!("📦 [inventory] send_product_rating → POST {}", url);
-    debug!("📦 [inventory] payload: product_id={} order_id={} rating={}", product_id, order_id, rating);
-
     let status = crate::services::http_client::internal_post(&url, payload).await?;
-    debug!("📦 [inventory] send_product_rating response: HTTP {}", status);
 
     match status {
         200 => {

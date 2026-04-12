@@ -69,7 +69,7 @@ pub async fn submit_rating(
         order_id,
         req.product_rating,
         req.product_review.as_deref(),
-        &images,
+        images.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
     ).await {
         error!("⚠️ [submit_rating_product] send_product_rating gagal (non-fatal): {:?}", e);
     } else {
