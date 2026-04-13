@@ -1,6 +1,6 @@
 use crate::models::order_state::OrderStatus;
 use crate::models::role::Role;
-use crate::models::shipping_address::ShippingAddress;
+pub(crate) use crate::models::shipping_address::ShippingAddress;
 use chrono::{DateTime, Utc};
 use sea_query::Iden;
 use serde::{Deserialize, Serialize};

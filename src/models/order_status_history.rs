@@ -21,7 +21,7 @@ pub enum OrderStatusHistoryIden {
 
 #[derive(Debug, Serialize, Deserialize, sqlx::FromRow, ToSchema)]
 pub struct OrderStatusHistory {
-    pub statushis_id: Uuid,
+    pub status_his_id: Uuid,
     pub order_id: Uuid,
     pub status: OrderStatus,
     pub changed_by: String,
