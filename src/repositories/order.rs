@@ -7,7 +7,7 @@ use uuid::Uuid;
 
 use crate::error::{AppError, Result};
 use crate::models::filter_pagination::{OrderFilter, PaginationParams, SortOrder};
-use crate::models::order::{CreateOrderRequest, Order, OrderIden};
+pub(crate) use crate::models::order::{CreateOrderRequest, Order, OrderIden};
 use crate::models::order_state::OrderStatus;
 use crate::models::role::Role;
 use crate::repositories::order_status_history::insert_status_history;
@@ -50,6 +50,8 @@ pub async fn find_all(
             OrderIden::NoteToJastiper,
             OrderIden::TrackingNumber,
             OrderIden::Courier,
+            OrderIden::CancellationReason,
+            OrderIden::CancelledBy,
             OrderIden::CompletedAt,
             OrderIden::CreatedAt,
             OrderIden::UpdatedAt,
@@ -126,6 +128,8 @@ pub async fn find_by_id(pool: &PgPool, order_id: Uuid) -> Result<Option<Order>> 
             OrderIden::NoteToJastiper,
             OrderIden::TrackingNumber,
             OrderIden::Courier,
+            OrderIden::CancellationReason,
+            OrderIden::CancelledBy,
             OrderIden::CompletedAt,
             OrderIden::CreatedAt,
             OrderIden::UpdatedAt,
@@ -182,7 +186,7 @@ pub async fn create(
             unit_price.into(),
             service_fee.into(),
             total_price.into(),
-            sea_query::Expr::cust("'PENDING'::order_status"),
+            OrderStatus::Pending.to_string().into(),
             serde_json::to_value(req.shipping_address).unwrap().into(),
             req.note_to_jastiper.unwrap_or_default().into(),
             now.into(),
@@ -221,10 +225,7 @@ pub async fn update(
     let mut query = Query::update();
     query
         .table(OrderIden::Order)
-        .value(
-            OrderIden::Status,
-            Expr::cust(format!("'{}'::order_status", new_status.to_string())),
-        )
+        .value(OrderIden::Status, Expr::value(new_status.to_string()))
         .value(OrderIden::UpdatedAt, now)
         .and_where(Expr::col(OrderIden::OrderId).eq(order_id));
 

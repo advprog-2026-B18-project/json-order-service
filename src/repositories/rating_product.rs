@@ -1,5 +1,5 @@
 use chrono::Utc;
-use sea_query::{PostgresQueryBuilder, Query};
+use sea_query::{Expr, PostgresQueryBuilder, Query};
 use sea_query_binder::SqlxBinder;
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -78,7 +78,14 @@ pub async fn create(
             titipers_id.into(),
             req.product_rating.into(),
             req.product_review.clone().unwrap_or_default().into(),
-            serde_json::to_value(&images).unwrap().into(),
+            Expr::cust(format!(
+                "ARRAY[{}]::TEXT[]",
+                images
+                    .iter()
+                    .map(|s| format!("'{}'", s.replace("'", "''")))
+                    .collect::<Vec<_>>()
+                    .join(",")
+            )),
             now.into(),
         ])
         .build_sqlx(PostgresQueryBuilder);
