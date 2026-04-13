@@ -1,4 +1,4 @@
-mod auth_client;
+pub(crate) mod auth_client;
 pub mod http_client;
 pub mod inventory_client;
 pub mod order;
