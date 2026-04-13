@@ -61,9 +61,12 @@ wiremock = "0.6.5"
 base64 = "0.22.1"
 async-trait = "0.1.89"
 mockall = "0.14.0"
+temp-env = "0.3.6"
 
 
 [dev-dependencies]
 # Srialisasi
 serial_test = "3"
 axum-test = "15"
+wiremock = "0.6"
+temp-env = { version = "0.3", features = ["async_closure"] }
