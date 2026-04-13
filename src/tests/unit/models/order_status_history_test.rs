@@ -8,7 +8,7 @@ mod tests {
 
     fn sample_history() -> OrderStatusHistory {
         OrderStatusHistory {
-            statushis_id: Uuid::new_v4(),
+            status_his_id: Uuid::new_v4(),
             order_id: Uuid::new_v4(),
             status: OrderStatus::Paid,
             changed_by: "user-service".to_string(),
