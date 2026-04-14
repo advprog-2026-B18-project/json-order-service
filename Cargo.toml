@@ -7,7 +7,7 @@ edition = "2024"
 # Web
 axum         = { version = "0.7", features = ["macros"] }
 axum-extra   = { version = "0.9", features = ["cookie", "typed-header"] }
-tokio        = { version = "1", features = ["full"] }
+tokio        = { version = "1", features = ["full", "macros", "rt-multi-thread"] }
 tower-http   = { version = "0.5", features = ["cors", "trace"] }
 
 # Database — Neon DB (wajib TLS)
@@ -59,8 +59,15 @@ repo = "0.14.6"
 reqwest = { version = "0.12", features = ["json"] }
 wiremock = "0.6.5"
 base64 = "0.22.1"
+async-trait = "0.1.89"
+mockall = "0.14.0"
+temp-env = "0.3.6"
+tower = "0.5.3"
 
 
 [dev-dependencies]
 # Srialisasi
 serial_test = "3"
+axum-test = "15"
+wiremock = "0.6"
+temp-env = { version = "0.3", features = ["async_closure"] }
