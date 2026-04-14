@@ -26,9 +26,9 @@ async fn main() {
     let api_router = Router::new()
         // ORDER ROUTES
         .route("/orders", post(controller::order::checkout))
-        .route("/orders/{order_id}", get(controller::order::get_order))
+        .route("/orders/:order_id", get(controller::order::get_order))
         .route(
-            "/orders/{order_id}/payment",
+            "/orders/:order_id/payment",
             patch(controller::order::payment),
         )
         .route(
@@ -44,35 +44,35 @@ async fn main() {
             patch(controller::order::shipped),
         )
         .route(
-            "/orders/{order_id}/history",
+            "/orders/:order_id/history",
             get(controller::order::get_order_history),
         )
         .route(
-            "/orders/{order_id}/cancel",
+            "/orders/:order_id/cancel",
             post(controller::order::cancel_order),
         )
         .route("/orders/my/purchases", get(controller::order::my_purchases))
         .route("/orders/my/sales", get(controller::order::my_sales))
         // RATING ROUTES
         .route(
-            "/orders/{order_id}/rating/jastiper",
+            "/orders/:order_id/rating/jastiper",
             get(controller::rating_jastiper::get_rating),
         )
         .route(
-            "/orders/{order_id}/rating/jastiper",
+            "/orders/:order_id/rating/jastiper",
             post(controller::rating_jastiper::submit_rating_jastiper),
         )
         .route(
-            "/orders/{order_id}/rating/product",
+            "/orders/:order_id/rating/product",
             get(controller::rating_product::get_rating),
         )
         .route(
-            "/orders/{order_id}/rating/product",
+            "/orders/:order_id/rating/product",
             post(controller::rating_product::submit_rating_product),
         )
         // INTERNAL ROUTES
         .route(
-            "/internal/orders/{order_id}/payment-info",
+            "/internal/orders/:order_id/payment-info",
             get(controller::internal::payment_info),
         )
         .route(
