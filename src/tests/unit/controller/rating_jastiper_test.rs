@@ -111,7 +111,6 @@ mod tests {
     #[test]
     fn test_create_rating_jastiper_request_validation() {
         use crate::models::rating_jastiper::CreateRatingJastiperRequest;
-        use validator::Validate;
 
         let req_invalid = CreateRatingJastiperRequest {
             jastiper_rating: 0.0,

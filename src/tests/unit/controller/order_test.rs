@@ -115,7 +115,6 @@ mod tests {
     #[test]
     fn test_cancel_request_validation() {
         use crate::models::order::CancelRequest;
-        use validator::Validate;
 
         let req_empty = CancelRequest {
             cancellation_reason: "".into(),

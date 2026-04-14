@@ -257,7 +257,7 @@ pub async fn cancel_status(
             AppError::NotFound("Pesanan tidak ditemukan".to_string())
         })?;
 
-    debug!("📋 [update_order] current status={:?}", order.status);
+    debug!("📋 [cancel_status] current status={:?}", order.status);
 
     let machine = OrderMachine::from_status(&order.status);
     machine.cancel(&role)?;

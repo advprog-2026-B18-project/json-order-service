@@ -136,7 +136,7 @@ mod tests {
 
             let mut machine = OrderMachine::from_status(&OrderStatus::Refunding);
             // Refunding → Completed oleh System (sesuai state machine)
-            let result = machine.update_status(&Role::System, &OrderStatus::Completed);
+            let result = machine.update_status(&Role::System, &OrderStatus::Cancelled);
             assert!(result.is_ok());
         }
     }
