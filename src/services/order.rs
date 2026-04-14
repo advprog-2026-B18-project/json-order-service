@@ -217,7 +217,7 @@ pub async fn update_status(
     let result = order_repo::update(
         pool,
         order_id,
-        &req.status,
+        &machine.current_status(),
         &requester_id.to_string(),
         &role,
         req.notes.as_deref(),
@@ -230,6 +230,54 @@ pub async fn update_status(
         error!("❌ [update_order] DB error: {:?}", e);
         e
     })?;
+
+    info!(
+        "✅ [update_status] order_id={} status updated to {:?}",
+        order_id, req.status
+    );
+    Ok(result)
+}
+
+// ── cancel_status ─────────────────────────────────────────────────
+pub async fn cancel_status(
+    pool: &PgPool,
+    order_id: Uuid,
+    requester_id: Uuid,
+    role: &Role,
+    req: UpdateStatusRequest,
+) -> Result<Order, AppError> {
+    let order = order_repo::find_by_id(pool, order_id)
+        .await
+        .map_err(|e| {
+            error!("❌ [update_order] DB error: {:?}", e);
+            e
+        })?
+        .ok_or_else(|| {
+            warn!("⚠️ [update_order] order not found: {}", order_id);
+            AppError::NotFound("Pesanan tidak ditemukan".to_string())
+        })?;
+
+    debug!("📋 [update_order] current status={:?}", order.status);
+
+    let machine = OrderMachine::from_status(&order.status);
+    machine.cancel(&role)?;
+
+    let result = order_repo::update(
+        pool,
+        order_id,
+        &machine.current_status(),
+        &requester_id.to_string(),
+        &role,
+        req.notes.as_deref(),
+        req.tracking_number.as_deref(),
+        req.courier.as_deref(),
+        req.cancellation_reason.as_deref(),
+    )
+        .await
+        .map_err(|e| {
+            error!("❌ [update_order] DB error: {:?}", e);
+            e
+        })?;
 
     info!(
         "✅ [update_status] order_id={} status updated to {:?}",
@@ -406,7 +454,7 @@ pub async fn cancel_order(
         order_id, requester_id, role
     );
 
-    let updated = update_status(
+    let updated = cancel_status(
         pool,
         order_id,
         requester_id,

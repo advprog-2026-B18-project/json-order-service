@@ -64,7 +64,7 @@ impl Display for OrderStatus {
 pub trait OrderState: Send {
     fn update_status(&self, role: &Role, next: &OrderStatus) -> Result<OrderStatus, AppError>;
 
-    fn cancel(&self, role: &Role) -> Result<(), AppError>;
+    fn cancel(&self, role: &Role) -> Result<OrderStatus, AppError>;
 
     fn current_status(&self) -> OrderStatus;
 }
@@ -95,7 +95,7 @@ impl OrderMachine {
         Ok(result)
     }
 
-    pub fn cancel(&self, role: &Role) -> Result<(), AppError> {
+    pub fn cancel(&self, role: &Role) -> Result<OrderStatus, AppError> {
         self.current_state.cancel(role)
     }
 }
@@ -120,9 +120,9 @@ impl OrderState for PendingState {
         }
     }
 
-    fn cancel(&self, role: &Role) -> Result<(), AppError> {
+    fn cancel(&self, role: &Role) -> Result<OrderStatus, AppError> {
         match role {
-            Role::Jastiper | Role::Admin => Ok(()),
+            Role::Jastiper | Role::Admin => Ok(OrderStatus::Cancelled),
             _ => Err(AppError::Forbidden(
                 "Hanya JASTIPER atau ADMIN yang bisa cancel order PENDING".to_string(),
             )),
@@ -146,9 +146,9 @@ impl OrderState for PaidState {
         }
     }
 
-    fn cancel(&self, role: &Role) -> Result<(), AppError> {
+    fn cancel(&self, role: &Role) -> Result<OrderStatus, AppError> {
         match role {
-            Role::Jastiper | Role::Admin => Ok(()),
+            Role::Jastiper | Role::Admin => Ok(OrderStatus::Refunding),
             _ => Err(AppError::Forbidden(
                 "Hanya JASTIPER atau ADMIN yang bisa cancel order PAID".to_string(),
             )),
@@ -172,9 +172,9 @@ impl OrderState for PurchasedState {
         }
     }
 
-    fn cancel(&self, role: &Role) -> Result<(), AppError> {
+    fn cancel(&self, role: &Role) -> Result<OrderStatus, AppError> {
         match role {
-            Role::Jastiper | Role::Admin => Ok(()),
+            Role::Jastiper | Role::Admin => Ok(OrderStatus::Refunding),
             _ => Err(AppError::Forbidden(
                 "Hanya JASTIPER atau ADMIN yang bisa cancel order PURCHASED".to_string(),
             )),
@@ -198,9 +198,9 @@ impl OrderState for ShippedState {
         }
     }
 
-    fn cancel(&self, role: &Role) -> Result<(), AppError> {
+    fn cancel(&self, role: &Role) -> Result<OrderStatus, AppError> {
         match role {
-            Role::Admin => Ok(()),
+            Role::Admin => Ok(OrderStatus::Refunding),
             _ => Err(AppError::Forbidden(
                 "Hanya ADMIN yang bisa cancel order SHIPPED".to_string(),
             )),
@@ -219,7 +219,7 @@ impl OrderState for CompletedState {
         ))
     }
 
-    fn cancel(&self, _role: &Role) -> Result<(), AppError> {
+    fn cancel(&self, _role: &Role) -> Result<OrderStatus, AppError> {
         Err(AppError::UnprocessableEntity(
             "Order sudah COMPLETED, tidak bisa dibatalkan".to_string(),
         ))
@@ -242,7 +242,7 @@ impl OrderState for RefundingState {
         }
     }
 
-    fn cancel(&self, _role: &Role) -> Result<(), AppError> {
+    fn cancel(&self, _role: &Role) -> Result<OrderStatus, AppError> {
         Err(AppError::UnprocessableEntity(
             "Order sedang dalam proses REFUNDING, tidak bisa dibatalkan".to_string(),
         ))
@@ -263,7 +263,7 @@ impl OrderState for RefundFailedState {
         }
     }
 
-    fn cancel(&self, _role: &Role) -> Result<(), AppError> {
+    fn cancel(&self, _role: &Role) -> Result<OrderStatus, AppError> {
         Err(AppError::UnprocessableEntity(
             "Order sedang dalam proses REFUND_FAILED, tidak bisa dibatalkan".to_string(),
         ))
@@ -281,7 +281,7 @@ impl OrderState for CancelledState {
         ))
     }
 
-    fn cancel(&self, _role: &Role) -> Result<(), AppError> {
+    fn cancel(&self, _role: &Role) -> Result<OrderStatus, AppError> {
         Err(AppError::UnprocessableEntity(
             "Order sudah CANCELLED".to_string(),
         ))
