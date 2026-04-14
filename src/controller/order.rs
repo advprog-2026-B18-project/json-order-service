@@ -15,7 +15,7 @@ use crate::models::filter_pagination::PaginationParams;
 use crate::models::order::{CancelRequest, CreateOrderRequest, ShippedRequest};
 use crate::services::order as svc;
 
-fn paginated_response(
+pub fn paginated_response(
     message: &str,
     orders: impl serde::Serialize,
     total: i64,
