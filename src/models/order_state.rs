@@ -233,11 +233,11 @@ impl OrderState for CompletedState {
 impl OrderState for RefundingState {
     fn update_status(&self, role: &Role, next: &OrderStatus) -> Result<OrderStatus, AppError> {
         match (next, role) {
-            (OrderStatus::Completed, Role::System) | (OrderStatus::Completed, Role::Admin) => {
-                Ok(OrderStatus::Completed)
-            }
+            (OrderStatus::Cancelled, Role::System) => Ok(OrderStatus::Cancelled),
+            (OrderStatus::RefundFailed, Role::System) => Ok(OrderStatus::RefundFailed),
             _ => Err(AppError::UnprocessableEntity(
-                "Order sedang dalam proses REFUNDING, tidak bisa diubah".to_string(),
+                "Order REFUNDING hanya bisa berubah ke CANCELLED atau REFUND_FAILED oleh SYSTEM"
+                    .to_string(),
             )),
         }
     }
@@ -256,9 +256,9 @@ impl OrderState for RefundingState {
 impl OrderState for RefundFailedState {
     fn update_status(&self, role: &Role, next: &OrderStatus) -> Result<OrderStatus, AppError> {
         match (next, role) {
-            (OrderStatus::Completed, Role::Admin) => Ok(OrderStatus::Completed),
+            (OrderStatus::Cancelled, Role::Admin) => Ok(OrderStatus::Cancelled),
             _ => Err(AppError::UnprocessableEntity(
-                "Order dalam status REFUNDING hanya bisa diubah oleh admin".to_string(),
+                "Order dalam status REFUND_FAILED hanya bisa diubah oleh admin".to_string(),
             )),
         }
     }
