@@ -26,7 +26,7 @@ mod tests {
             ],
             async move { deduct_wallet(user_id, order_id, 50_000, "Test deduct").await },
         )
-            .await;
+        .await;
 
         assert!(result.is_ok());
     }
@@ -51,7 +51,7 @@ mod tests {
             ],
             async move { deduct_wallet(user_id, order_id, 50_000, "Test deduct").await },
         )
-            .await;
+        .await;
 
         assert!(result.is_err());
         match result.unwrap_err() {
@@ -82,7 +82,7 @@ mod tests {
             ],
             async move { deduct_wallet(user_id, order_id, 50_000, "Test deduct").await },
         )
-            .await;
+        .await;
 
         assert!(result.is_err());
         match result.unwrap_err() {
@@ -111,7 +111,7 @@ mod tests {
             ],
             async move { deduct_wallet(user_id, order_id, 50_000, "Test deduct").await },
         )
-            .await;
+        .await;
 
         assert!(result.is_ok()); // idempotent → ok
     }
@@ -136,7 +136,7 @@ mod tests {
             ],
             async move { refund_wallet(user_id, order_id, 50_000, "Test refund").await },
         )
-            .await;
+        .await;
 
         assert!(result.is_ok());
     }
@@ -161,7 +161,7 @@ mod tests {
             ],
             async move { refund_wallet(user_id, order_id, 50_000, "Test refund").await },
         )
-            .await;
+        .await;
 
         assert!(result.is_ok());
     }
@@ -189,7 +189,7 @@ mod tests {
             ],
             async move { check_wallet(user_id, 50_000).await },
         )
-            .await;
+        .await;
 
         assert!(result.is_ok());
     }
@@ -217,7 +217,7 @@ mod tests {
             ],
             async move { check_wallet(user_id, 50_000).await },
         )
-            .await;
+        .await;
 
         assert!(result.is_err());
     }

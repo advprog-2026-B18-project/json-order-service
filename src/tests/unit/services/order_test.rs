@@ -94,8 +94,7 @@ mod tests {
             let order = make_order(order_id, titipers_id, jastiper_id, OrderStatus::Pending);
 
             // Simulasi logic forbidden check
-            let is_forbidden =
-                order.titipers_id != orang_lain && order.jastiper_id != orang_lain;
+            let is_forbidden = order.titipers_id != orang_lain && order.jastiper_id != orang_lain;
             assert!(is_forbidden);
         }
     }
@@ -266,7 +265,6 @@ mod tests {
         }
     }
 
-
     mod payment {
         use super::*;
 
@@ -274,8 +272,12 @@ mod tests {
         #[test]
         fn test_payment_hanya_bisa_dari_pending() {
             let titipers_id = Uuid::new_v4();
-            let order =
-                make_order(Uuid::new_v4(), titipers_id, Uuid::new_v4(), OrderStatus::Paid);
+            let order = make_order(
+                Uuid::new_v4(),
+                titipers_id,
+                Uuid::new_v4(),
+                OrderStatus::Paid,
+            );
 
             // Simulasi: status bukan PENDING → konflik
             let is_conflict = order.status != OrderStatus::Pending;

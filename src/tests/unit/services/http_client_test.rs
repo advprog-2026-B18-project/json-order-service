@@ -18,10 +18,10 @@ mod tests {
             .await;
 
         let url = format!("{}/test", server.uri());
-        let result = temp_env::async_with_vars(
-            [("INTERNAL_SERVICE_KEY", Some("test-key"))],
-            async move { internal_post(&url, serde_json::json!({})).await },
-        )
+        let result =
+            temp_env::async_with_vars([("INTERNAL_SERVICE_KEY", Some("test-key"))], async move {
+                internal_post(&url, serde_json::json!({})).await
+            })
             .await;
 
         assert!(result.is_ok());
@@ -40,10 +40,10 @@ mod tests {
             .await;
 
         let url = format!("{}/test", server.uri());
-        let result = temp_env::async_with_vars(
-            [("INTERNAL_SERVICE_KEY", Some("test-key"))],
-            async move { internal_post(&url, serde_json::json!({})).await },
-        )
+        let result =
+            temp_env::async_with_vars([("INTERNAL_SERVICE_KEY", Some("test-key"))], async move {
+                internal_post(&url, serde_json::json!({})).await
+            })
             .await;
 
         assert!(result.is_ok());
@@ -65,10 +65,10 @@ mod tests {
             .await;
 
         let url = format!("{}/test", server.uri());
-        let result = temp_env::async_with_vars(
-            [("INTERNAL_SERVICE_KEY", Some("test-key"))],
-            async move { internal_get(&url, serde_json::json!({})).await },
-        )
+        let result =
+            temp_env::async_with_vars([("INTERNAL_SERVICE_KEY", Some("test-key"))], async move {
+                internal_get(&url, serde_json::json!({})).await
+            })
             .await;
 
         assert!(result.is_ok());
@@ -80,10 +80,10 @@ mod tests {
     // internal_post gagal connect harus return AppError::Internal
     #[tokio::test]
     async fn test_internal_post_gagal_connect() {
-        let result = temp_env::async_with_vars(
-            [("INTERNAL_SERVICE_KEY", Some("test-key"))],
-            async { internal_post("http://localhost:19999/dead", serde_json::json!({})).await },
-        )
+        let result =
+            temp_env::async_with_vars([("INTERNAL_SERVICE_KEY", Some("test-key"))], async {
+                internal_post("http://localhost:19999/dead", serde_json::json!({})).await
+            })
             .await;
 
         assert!(result.is_err());

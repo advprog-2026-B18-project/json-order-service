@@ -27,7 +27,7 @@ mod tests {
             ],
             async move { send_jastiper_rating(jastiper_id, order_id, 4.5, Some("Bagus")).await },
         )
-            .await;
+        .await;
 
         assert!(result.is_ok());
     }
@@ -53,7 +53,7 @@ mod tests {
             ],
             async move { send_jastiper_rating(jastiper_id, order_id, 4.5, None).await },
         )
-            .await;
+        .await;
 
         assert!(result.is_ok()); // non-fatal
     }
@@ -79,7 +79,7 @@ mod tests {
             ],
             async move { send_jastiper_rating(jastiper_id, order_id, 4.5, None).await },
         )
-            .await;
+        .await;
 
         assert!(result.is_ok());
     }
@@ -105,7 +105,7 @@ mod tests {
             ],
             async move { send_jastiper_rating(jastiper_id, order_id, 5.0, None).await },
         )
-            .await;
+        .await;
 
         assert!(result.is_ok());
     }

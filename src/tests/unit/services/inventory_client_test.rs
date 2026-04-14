@@ -32,7 +32,7 @@ mod tests {
             ],
             async move { reserve_stock(product_id, order_id, 2).await },
         )
-            .await;
+        .await;
 
         assert!(result.is_ok());
     }
@@ -61,7 +61,7 @@ mod tests {
             ],
             async move { reserve_stock(product_id, order_id, 2).await },
         )
-            .await;
+        .await;
 
         assert!(result.is_err());
         match result.unwrap_err() {
@@ -94,7 +94,7 @@ mod tests {
             ],
             async move { reserve_stock(product_id, order_id, 2).await },
         )
-            .await;
+        .await;
 
         assert!(result.is_err());
         match result.unwrap_err() {
@@ -127,7 +127,7 @@ mod tests {
             ],
             async move { reserve_stock(product_id, order_id, 2).await },
         )
-            .await;
+        .await;
 
         assert!(result.is_err());
         match result.unwrap_err() {
@@ -160,7 +160,7 @@ mod tests {
             ],
             async move { release_stock(product_id, order_id, 2).await },
         )
-            .await;
+        .await;
 
         assert!(result.is_ok());
     }
@@ -173,16 +173,14 @@ mod tests {
 
         Mock::given(method("GET"))
             .and(path(format!("/products/{}", product_id)))
-            .respond_with(
-                ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                    "data": {
-                        "id": product_id,
-                        "name": "Matcha Kit Kat",
-                        "price": 25000,
-                        "jastiperId": Uuid::new_v4(),
-                    }
-                })),
-            )
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "data": {
+                    "id": product_id,
+                    "name": "Matcha Kit Kat",
+                    "price": 25000,
+                    "jastiperId": Uuid::new_v4(),
+                }
+            })))
             .mount(&server)
             .await;
 
@@ -194,7 +192,7 @@ mod tests {
             ],
             async move { fetch_product(product_id).await },
         )
-            .await;
+        .await;
 
         assert!(result.is_ok());
         assert_eq!(result.unwrap()["name"], "Matcha Kit Kat");
@@ -220,7 +218,7 @@ mod tests {
             ],
             async move { fetch_product(product_id).await },
         )
-            .await;
+        .await;
 
         assert!(result.is_err());
         match result.unwrap_err() {
@@ -246,15 +244,16 @@ mod tests {
 
         let order_id = Uuid::new_v4();
         let uri = server.uri();
-        let result = temp_env::async_with_vars(
-            [
-                ("INVENTORY_SERVICE_URL", Some(uri.as_str())),
-                ("INTERNAL_SERVICE_KEY", Some("test-key")),
-            ],
-            async move {
-                send_product_rating(product_id, order_id, 4.5, Some("Bagus"), vec![]).await
-            },
-        )
+        let result =
+            temp_env::async_with_vars(
+                [
+                    ("INVENTORY_SERVICE_URL", Some(uri.as_str())),
+                    ("INTERNAL_SERVICE_KEY", Some("test-key")),
+                ],
+                async move {
+                    send_product_rating(product_id, order_id, 4.5, Some("Bagus"), vec![]).await
+                },
+            )
             .await;
 
         assert!(result.is_ok());
@@ -284,7 +283,7 @@ mod tests {
             ],
             async move { send_product_rating(product_id, order_id, 4.5, None, vec![]).await },
         )
-            .await;
+        .await;
 
         assert!(result.is_ok()); // non-fatal
     }
@@ -313,7 +312,7 @@ mod tests {
             ],
             async move { send_product_rating(product_id, order_id, 4.5, None, vec![]).await },
         )
-            .await;
+        .await;
 
         assert!(result.is_ok());
     }
