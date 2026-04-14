@@ -32,7 +32,7 @@ async fn manage_stock(
     );
 
     let url = format!(
-        "{}/internal/products/{}/stock/{}",
+        "{}/products/internal/{}/stock/{}",
         inventory_url(),
         product_id,
         suffix
