@@ -101,10 +101,10 @@ mod tests {
         let invalid = [0u8, 6, 255];
 
         for &r in &valid {
-            assert!(r >= 1 && r <= 5, "Rating {} seharusnya valid", r);
+            assert!((1..=5).contains(&r), "Rating {} seharusnya valid", r);
         }
         for &r in &invalid {
-            assert!(r < 1 || r > 5, "Rating {} seharusnya tidak valid", r);
+            assert!(!(1..=5).contains(&r), "Rating {} seharusnya tidak valid", r);
         }
     }
 
