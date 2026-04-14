@@ -273,11 +273,11 @@ pub async fn cancel_status(
         req.courier.as_deref(),
         req.cancellation_reason.as_deref(),
     )
-        .await
-        .map_err(|e| {
-            error!("❌ [update_order] DB error: {:?}", e);
-            e
-        })?;
+    .await
+    .map_err(|e| {
+        error!("❌ [update_order] DB error: {:?}", e);
+        e
+    })?;
 
     info!(
         "✅ [update_status] order_id={} status updated to {:?}",
