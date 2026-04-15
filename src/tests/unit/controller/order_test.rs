@@ -2,7 +2,7 @@
 mod tests {
     use crate::controller::order::paginated_response;
     use crate::models::shipping_address::ShippingAddress;
-    use serde_json::{json};
+    use serde_json::json;
     use uuid::Uuid;
 
     fn make_bearer_token(user_id: Uuid, role: &str) -> (String, String) {
@@ -115,7 +115,6 @@ mod tests {
     #[test]
     fn test_cancel_request_validation() {
         use crate::models::order::CancelRequest;
-        use validator::Validate;
 
         let req_empty = CancelRequest {
             cancellation_reason: "".into(),

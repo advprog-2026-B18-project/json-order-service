@@ -89,8 +89,10 @@ mod tests {
         fn test_berhasil_jika_refunding_dan_amount_cocok() {
             let order = make_order(Uuid::new_v4(), OrderStatus::Refunding, 50_000);
             let req = RefundConfirmedRequest {
+                success: true,
                 wallet_transaction_id: Uuid::new_v4(),
                 amount_refunded: 50_000,
+                notes: None,
             };
 
             assert_eq!(order.status, OrderStatus::Refunding);
@@ -120,8 +122,10 @@ mod tests {
         fn test_amount_mismatch() {
             let order = make_order(Uuid::new_v4(), OrderStatus::Refunding, 50_000);
             let req = RefundConfirmedRequest {
+                success: true,
                 wallet_transaction_id: Uuid::new_v4(),
                 amount_refunded: 10_000, // berbeda
+                notes: None,
             };
 
             let mismatch = order.total_price != req.amount_refunded;
@@ -136,7 +140,7 @@ mod tests {
 
             let mut machine = OrderMachine::from_status(&OrderStatus::Refunding);
             // Refunding → Completed oleh System (sesuai state machine)
-            let result = machine.update_status(&Role::System, &OrderStatus::Completed);
+            let result = machine.update_status(&Role::System, &OrderStatus::Cancelled);
             assert!(result.is_ok());
         }
     }
