@@ -101,6 +101,8 @@ pub struct PaymentConfirmedRequest {
 
 #[derive(Debug, Deserialize, Validate)]
 pub struct RefundConfirmedRequest {
+    pub success: bool,
     pub wallet_transaction_id: Uuid,
     pub amount_refunded: i64,
+    pub notes: Option<String>,
 }
