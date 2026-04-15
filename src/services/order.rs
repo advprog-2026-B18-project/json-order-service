@@ -283,59 +283,6 @@ pub async fn cancel_status(
     Ok(result)
 }
 
-// ── cancel_status ─────────────────────────────────────────────────
-pub async fn cancel_status(
-    pool: &PgPool,
-    order_id: Uuid,
-    requester_id: Uuid,
-    role: &Role,
-    req: UpdateStatusRequest,
-) -> Result<Order, AppError> {
-    info!(
-        "🔄 [cancel_order] order_id={} requester_id={} role={} new_status={:?}",
-        order_id, requester_id, role, req.status
-    );
-
-    let order = order_repo::find_by_id(pool, order_id)
-        .await
-        .map_err(|e| {
-            error!("❌ [update_order] DB error: {:?}", e);
-            e
-        })?
-        .ok_or_else(|| {
-            warn!("⚠️ [update_order] order not found: {}", order_id);
-            AppError::NotFound("Pesanan tidak ditemukan".to_string())
-        })?;
-
-    debug!("📋 [cancel_order] current status={:?}", order.status);
-
-    let mut machine = OrderMachine::from_status(&order.status);
-    machine.cancel(&role)?;
-
-    let result = order_repo::update(
-        pool,
-        order_id,
-        &req.status,
-        &requester_id.to_string(),
-        &role,
-        req.notes.as_deref(),
-        req.tracking_number.as_deref(),
-        req.courier.as_deref(),
-        req.cancellation_reason.as_deref(),
-    )
-        .await
-        .map_err(|e| {
-            error!("❌ [update_order] DB error: {:?}", e);
-            e
-        })?;
-
-    info!(
-        "✅ [cancel_order] order_id={} status updated to {:?}",
-        order_id, req.status
-    );
-    Ok(result)
-}
-
 // ── payment ──────────────────────────────────────────────────────
 pub async fn payment(pool: &PgPool, titipers_id: Uuid, order_id: Uuid) -> Result<Order, AppError> {
     let order = order_repo::find_by_id(pool, order_id)
