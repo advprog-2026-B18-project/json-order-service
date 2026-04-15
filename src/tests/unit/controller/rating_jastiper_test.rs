@@ -101,17 +101,16 @@ mod tests {
         let invalid = [0u8, 6, 255];
 
         for &r in &valid {
-            assert!(r >= 1 && r <= 5, "Rating {} seharusnya valid", r);
+            assert!((1..=5).contains(&r), "Rating {} seharusnya valid", r);
         }
         for &r in &invalid {
-            assert!(r < 1 || r > 5, "Rating {} seharusnya tidak valid", r);
+            assert!(!(1..=5).contains(&r), "Rating {} seharusnya tidak valid", r);
         }
     }
 
     #[test]
     fn test_create_rating_jastiper_request_validation() {
         use crate::models::rating_jastiper::CreateRatingJastiperRequest;
-        use validator::Validate;
 
         let req_invalid = CreateRatingJastiperRequest {
             jastiper_rating: 0.0,

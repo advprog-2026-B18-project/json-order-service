@@ -195,29 +195,74 @@ pub async fn update_status(
         _ => {}
     }
 
-    match &req.status {
-        OrderStatus::Shipped => {
-            if req.tracking_number.is_none() {
-                return Err(AppError::UnprocessableEntity(
-                    "tracking_number wajib diisi saat status SHIPPED".to_string(),
-                ));
-            }
-            if req.courier.is_none() {
-                return Err(AppError::UnprocessableEntity(
-                    "courier wajib diisi saat status SHIPPED".to_string(),
-                ));
-            }
+    if req.status == OrderStatus::Shipped {
+        if req.tracking_number.is_none() {
+            return Err(AppError::UnprocessableEntity(
+                "tracking_number wajib diisi saat status SHIPPED".to_string(),
+            ));
         }
-        _ => {}
+        if req.courier.is_none() {
+            return Err(AppError::UnprocessableEntity(
+                "courier wajib diisi saat status SHIPPED".to_string(),
+            ));
+        }
     }
 
     let mut machine = OrderMachine::from_status(&order.status);
-    machine.update_status(&role, &req.status)?;
+    machine.update_status(role, &req.status)?;
 
     let result = order_repo::update(
         pool,
         order_id,
-        &req.status,
+        &machine.current_status(),
+        &requester_id.to_string(),
+        role,
+        req.notes.as_deref(),
+        req.tracking_number.as_deref(),
+        req.courier.as_deref(),
+        req.cancellation_reason.as_deref(),
+    )
+    .await
+    .map_err(|e| {
+        error!("❌ [update_order] DB error: {:?}", e);
+        e
+    })?;
+
+    info!(
+        "✅ [update_status] order_id={} status updated to {:?}",
+        order_id, req.status
+    );
+    Ok(result)
+}
+
+// ── cancel_status ─────────────────────────────────────────────────
+pub async fn cancel_status(
+    pool: &PgPool,
+    order_id: Uuid,
+    requester_id: Uuid,
+    role: &Role,
+    req: UpdateStatusRequest,
+) -> Result<Order, AppError> {
+    let order = order_repo::find_by_id(pool, order_id)
+        .await
+        .map_err(|e| {
+            error!("❌ [update_order] DB error: {:?}", e);
+            e
+        })?
+        .ok_or_else(|| {
+            warn!("⚠️ [update_order] order not found: {}", order_id);
+            AppError::NotFound("Pesanan tidak ditemukan".to_string())
+        })?;
+
+    debug!("📋 [cancel_status] current status={:?}", order.status);
+
+    let machine = OrderMachine::from_status(&order.status);
+    machine.cancel(role)?;
+
+    let result = order_repo::update(
+        pool,
+        order_id,
+        &machine.current_status(),
         &requester_id.to_string(),
         &role,
         req.notes.as_deref(),
@@ -406,7 +451,7 @@ pub async fn cancel_order(
         order_id, requester_id, role
     );
 
-    let updated = update_status(
+    let updated = cancel_status(
         pool,
         order_id,
         requester_id,

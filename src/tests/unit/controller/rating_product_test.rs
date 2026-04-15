@@ -62,15 +62,15 @@ mod tests {
         let invalid_ratings_high = [6u8, 10];
 
         for &r in &valid_ratings {
-            assert!(r >= 1 && r <= 5, "Rating {} harusnya valid", r);
+            assert!((1..=5).contains(&r), "Rating {} harusnya valid", r);
         }
 
         for &r in &invalid_ratings_low {
-            assert!(r < 1 || r > 5, "Rating {} harusnya tidak valid", r);
+            assert!(!(1..=5).contains(&r), "Rating {} harusnya tidak valid", r);
         }
 
         for &r in &invalid_ratings_high {
-            assert!(r < 1 || r > 5, "Rating {} harusnya tidak valid", r);
+            assert!(!(1..=5).contains(&r), "Rating {} harusnya tidak valid", r);
         }
     }
 

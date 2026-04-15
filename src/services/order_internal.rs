@@ -1,5 +1,6 @@
 use sqlx::PgPool;
 use tracing::info;
+use tracing::log::warn;
 use uuid::Uuid;
 
 use crate::error::AppError;
@@ -80,24 +81,40 @@ pub async fn refund_confirmed(
         return Err(AppError::Conflict("Refund already confirmed".to_string()));
     }
 
-    if order.status != OrderStatus::Refunding {
+    if order.status != OrderStatus::Refunding || order.status != OrderStatus::RefundFailed {
         return Err(AppError::Conflict(format!(
-            "Status harus REFUNDING, sekarang {:?}",
+            "Status harus REFUNDING/REFUNDFAILED, sekarang {:?}",
             order.status
         )));
     }
 
-    if order.total_price != req.amount_refunded {
+    if req.success && order.total_price != req.amount_refunded {
         return Err(AppError::UnprocessableEntity(format!(
             "Amount mismatch, expected {}",
             order.total_price
         )));
     }
 
-    info!(
-        "✅ [refund_confirmed] order_id={} refund dikonfirmasi amount={}",
-        order_id, req.amount_refunded
-    );
+    let (target_status, notes) = if req.success {
+        info!(
+            "✅ [refund_confirmed] order_id={} refund SUKSES amount={}",
+            order_id, req.amount_refunded
+        );
+        (
+            OrderStatus::Cancelled,
+            "Refund dikonfirmasi dari Modul Wallet".to_string(),
+        )
+    } else {
+        warn!(
+            "❌ [refund_confirmed] order_id={} refund GAGAL reason={:?}",
+            order_id, req.notes
+        );
+        (
+            OrderStatus::RefundFailed,
+            req.notes
+                .unwrap_or_else(|| "Refund gagal dari Modul Wallet".to_string()),
+        )
+    };
 
     let result = update_status(
         pool,
@@ -105,8 +122,8 @@ pub async fn refund_confirmed(
         Uuid::nil(),
         &Role::System,
         UpdateStatusRequest {
-            status: OrderStatus::Cancelled,
-            notes: Some("Refund dikonfirmasi dari Modul Wallet".to_string()),
+            status: target_status,
+            notes: Option::from(notes),
             tracking_number: None,
             courier: None,
             cancellation_reason: None,
