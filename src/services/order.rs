@@ -1,5 +1,4 @@
 use serde_json::json;
-use sqlx::PgPool;
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
@@ -11,13 +10,16 @@ use crate::models::order::{
 use crate::models::order_state::OrderMachine;
 use crate::models::order_status_history::{OrderStatus, OrderStatusHistory};
 use crate::models::role::Role;
-use crate::repositories::{order as order_repo, order_status_history as history_repo};
-use crate::services::inventory_client::{fetch_product, release_stock, reserve_stock};
-use crate::services::wallet_client::{check_wallet, deduct_wallet, refund_wallet};
+use crate::ports::inventory_client::InventoryClient;
+use crate::ports::order_repository::OrderRepository;
+use crate::ports::order_status_history_repository::OrderStatusHistoryRepository;
+use crate::ports::wallet_client::WalletClient;
 
 // ── checkout ──────────────────────────────────────────────────────
 pub async fn checkout(
-    pool: &PgPool,
+    order_repo: &dyn OrderRepository,
+    inventory_client: &dyn InventoryClient,
+    wallet_client: &dyn WalletClient,
     titipers_id: Uuid,
     req: CreateOrderRequest,
 ) -> Result<Order, AppError> {
@@ -28,18 +30,18 @@ pub async fn checkout(
 
     let order_id = Uuid::new_v4();
 
-    let product = fetch_product(req.product_id).await.map_err(|e| {
-        error!("❌ [checkout] fetch_product gagal: {:?}", e);
-        e
-    })?;
+    let product = inventory_client
+        .fetch_product(req.product_id)
+        .await
+        .map_err(|e| {
+            error!("❌ [checkout] fetch_product gagal: {:?}", e);
+            e
+        })?;
 
-    let jastiper_id: Uuid = serde_json::from_value(product["jastiperId"].clone()).map_err(|e| {
-        error!("❌ [checkout] parse jastiper_id gagal: {:?}", e);
-        AppError::Internal
-    })?;
+    let jastiper_id: Uuid =
+        serde_json::from_value(product["jastiperId"].clone()).map_err(|_| AppError::Internal)?;
 
     if titipers_id == jastiper_id {
-        warn!("⚠️ [checkout] titipers_id == jastiper_id, forbidden");
         return Err(AppError::Forbidden(
             "Jastiper tidak dapat membeli produk milik sendiri".to_string(),
         ));
@@ -60,53 +62,44 @@ pub async fn checkout(
         "service_fee":    service_fee,
     });
 
-    debug!(
-        "📦 [checkout] reserving stock product_id={} qty={}",
-        req.product_id, req.quantity
-    );
-    reserve_stock(req.product_id, order_id, req.quantity)
+    inventory_client
+        .reserve_stock(req.product_id, order_id, req.quantity)
         .await
         .map_err(|e| {
             error!("❌ [checkout] reserve_stock gagal: {:?}", e);
             e
         })?;
-    info!("✅ [checkout] stock reserved");
 
-    debug!("💵 [checkout] checking user balance");
-    check_wallet(titipers_id, total_price).await.map_err(|e| {
-        error!("❌ [wallet] pengecekan saldo gagal: {:?}", e);
-        e
-    })?;
-    info!("✅ [checkout] saldo checked");
+    if let Err(e) = wallet_client.check_wallet(titipers_id, total_price).await {
+        error!("❌ [checkout] check_wallet gagal, releasing stock: {:?}", e);
+        let _ = inventory_client
+            .release_stock(req.product_id, order_id, req.quantity)
+            .await;
+        return Err(e);
+    }
 
     let pid = req.product_id;
     let qty = req.quantity;
-    debug!("💾 [checkout] saving order to DB");
-    match order_repo::create(
-        pool,
-        titipers_id,
-        jastiper_id,
-        req,
-        snapshot,
-        unit_price,
-        service_fee,
-        total_price,
-    )
-    .await
+
+    match order_repo
+        .create(
+            titipers_id,
+            jastiper_id,
+            req,
+            snapshot,
+            unit_price,
+            service_fee,
+            total_price,
+        )
+        .await
     {
         Ok(order) => {
-            info!(
-                "✅ [checkout] order created successfully order_id={}",
-                order.order_id
-            );
+            info!("✅ [checkout] order created order_id={}", order.order_id);
             Ok(order)
         }
         Err(e) => {
-            error!(
-                "❌ [checkout] order_repo::create gagal: {:?}, rolling back stock",
-                e
-            );
-            let _ = release_stock(pid, order_id, qty).await;
+            error!("❌ [checkout] order create gagal, releasing stock: {:?}", e);
+            let _ = inventory_client.release_stock(pid, order_id, qty).await;
             Err(e)
         }
     }
@@ -114,7 +107,7 @@ pub async fn checkout(
 
 // ── get_order ─────────────────────────────────────────────────────
 pub async fn get_order(
-    pool: &PgPool,
+    order_repo: &dyn OrderRepository,
     order_id: Uuid,
     requester_id: Uuid,
 ) -> Result<Order, AppError> {
@@ -123,7 +116,8 @@ pub async fn get_order(
         order_id, requester_id
     );
 
-    let order = order_repo::find_by_id(pool, order_id)
+    let order = order_repo
+        .find_by_id(order_id)
         .await
         .map_err(|e| {
             error!("❌ [get_order] DB error: {:?}", e);
@@ -153,7 +147,7 @@ pub async fn get_order(
 
 // ── update_status ─────────────────────────────────────────────────
 pub async fn update_status(
-    pool: &PgPool,
+    order_repo: &dyn OrderRepository,
     order_id: Uuid,
     requester_id: Uuid,
     role: &Role,
@@ -164,7 +158,8 @@ pub async fn update_status(
         order_id, requester_id, role, req.status
     );
 
-    let order = order_repo::find_by_id(pool, order_id)
+    let order = order_repo
+        .find_by_id(order_id)
         .await
         .map_err(|e| {
             error!("❌ [update_order] DB error: {:?}", e);
@@ -209,24 +204,24 @@ pub async fn update_status(
     }
 
     let mut machine = OrderMachine::from_status(&order.status);
-    machine.update_status(role, &req.status)?;
+    let new_status = machine.update_status(role, &req.status)?;
 
-    let result = order_repo::update(
-        pool,
-        order_id,
-        &machine.current_status(),
-        &requester_id.to_string(),
-        role,
-        req.notes.as_deref(),
-        req.tracking_number.as_deref(),
-        req.courier.as_deref(),
-        req.cancellation_reason.as_deref(),
-    )
-    .await
-    .map_err(|e| {
-        error!("❌ [update_order] DB error: {:?}", e);
-        e
-    })?;
+    let result = order_repo
+        .update(
+            order_id,
+            &new_status,
+            &requester_id.to_string(),
+            role,
+            req.notes.as_deref(),
+            req.tracking_number.as_deref(),
+            req.courier.as_deref(),
+            req.cancellation_reason.as_deref(),
+        )
+        .await
+        .map_err(|e| {
+            error!("❌ [update_order] DB error: {:?}", e);
+            e
+        })?;
 
     info!(
         "✅ [update_status] order_id={} status updated to {:?}",
@@ -237,13 +232,14 @@ pub async fn update_status(
 
 // ── cancel_status ─────────────────────────────────────────────────
 pub async fn cancel_status(
-    pool: &PgPool,
+    order_repo: &dyn OrderRepository,
     order_id: Uuid,
     requester_id: Uuid,
     role: &Role,
     req: UpdateStatusRequest,
 ) -> Result<Order, AppError> {
-    let order = order_repo::find_by_id(pool, order_id)
+    let order = order_repo
+        .find_by_id(order_id)
         .await
         .map_err(|e| {
             error!("❌ [update_order] DB error: {:?}", e);
@@ -257,24 +253,29 @@ pub async fn cancel_status(
     debug!("📋 [cancel_status] current status={:?}", order.status);
 
     let machine = OrderMachine::from_status(&order.status);
-    machine.cancel(role)?;
+    let new_status = machine.cancel(role)?;
 
-    let result = order_repo::update(
-        pool,
-        order_id,
-        &machine.current_status(),
-        &requester_id.to_string(),
-        &role,
-        req.notes.as_deref(),
-        req.tracking_number.as_deref(),
-        req.courier.as_deref(),
-        req.cancellation_reason.as_deref(),
-    )
-    .await
-    .map_err(|e| {
-        error!("❌ [update_order] DB error: {:?}", e);
-        e
-    })?;
+    debug!(
+        "📋 [cancel_status] current status={:?}",
+        &machine.current_status()
+    );
+
+    let result = order_repo
+        .update(
+            order_id,
+            &new_status,
+            &requester_id.to_string(),
+            &role,
+            req.notes.as_deref(),
+            req.tracking_number.as_deref(),
+            req.courier.as_deref(),
+            req.cancellation_reason.as_deref(),
+        )
+        .await
+        .map_err(|e| {
+            error!("❌ [update_order] DB error: {:?}", e);
+            e
+        })?;
 
     info!(
         "✅ [update_status] order_id={} status updated to {:?}",
@@ -284,8 +285,14 @@ pub async fn cancel_status(
 }
 
 // ── payment ──────────────────────────────────────────────────────
-pub async fn payment(pool: &PgPool, titipers_id: Uuid, order_id: Uuid) -> Result<Order, AppError> {
-    let order = order_repo::find_by_id(pool, order_id)
+pub async fn payment(
+    order_repo: &dyn OrderRepository,
+    wallet_client: &dyn WalletClient,
+    titipers_id: Uuid,
+    order_id: Uuid,
+) -> Result<Order, AppError> {
+    let order = order_repo
+        .find_by_id(order_id)
         .await?
         .ok_or_else(|| AppError::NotFound("Pesanan tidak ditemukan".to_string()))?;
 
@@ -300,16 +307,22 @@ pub async fn payment(pool: &PgPool, titipers_id: Uuid, order_id: Uuid) -> Result
         )));
     }
 
-    debug!("💵 [payment] deduct wallet balance for titipers_id={} amount={}", titipers_id, order.total_price);
+    debug!(
+        "💵 [payment] deduct wallet balance for titipers_id={} amount={}",
+        titipers_id, order.total_price
+    );
     let desc = format!("Pembayaran Order #{}", order_id);
-    if let Err(e) = deduct_wallet(titipers_id, order_id, order.total_price, &desc).await {
+    if let Err(e) = wallet_client
+        .deduct_wallet(titipers_id, order_id, order.total_price, &desc)
+        .await
+    {
         error!("❌ [payment] deduct_wallet gagal: {:?}", e);
         return Err(e);
     }
     info!("✅ [payment] wallet deducted, wallet service sudah menginfirmasi pembayaran");
 
     let result = update_status(
-        pool,
+        order_repo,
         order_id,
         titipers_id,
         &Role::System,
@@ -332,12 +345,12 @@ pub async fn payment(pool: &PgPool, titipers_id: Uuid, order_id: Uuid) -> Result
 
 // ── confirm_order ─────────────────────────────────────────────────
 pub async fn confirm_order(
-    pool: &PgPool,
+    order_repo: &dyn OrderRepository,
     titipers_id: Uuid,
     order_id: Uuid,
 ) -> Result<Order, AppError> {
     let result = update_status(
-        pool,
+        order_repo,
         order_id,
         titipers_id,
         &Role::Titipers,
@@ -360,12 +373,12 @@ pub async fn confirm_order(
 
 // ── purchased ─────────────────────────────────────────────────────
 pub async fn purchased(
-    pool: &PgPool,
+    order_repo: &dyn OrderRepository,
     order_id: Uuid,
     jastiper_id: Uuid,
 ) -> Result<Order, AppError> {
     let result = update_status(
-        pool,
+        order_repo,
         order_id,
         jastiper_id,
         &Role::Jastiper,
@@ -388,13 +401,13 @@ pub async fn purchased(
 
 // ── shipped ─────────────────────────────────────────────────────
 pub async fn shipped(
-    pool: &PgPool,
+    order_repo: &dyn OrderRepository,
     order_id: Uuid,
     jastiper_id: Uuid,
     req: ShippedRequest,
 ) -> Result<Order, AppError> {
     let result = update_status(
-        pool,
+        order_repo,
         order_id,
         jastiper_id,
         &Role::Jastiper,
@@ -417,7 +430,8 @@ pub async fn shipped(
 
 // ── get_order_history ─────────────────────────────────────────────
 pub async fn get_order_history(
-    pool: &PgPool,
+    order_repo: &dyn OrderRepository,
+    order_status_repo: &dyn OrderStatusHistoryRepository,
     order_id: Uuid,
     requester_id: Uuid,
 ) -> Result<Vec<OrderStatusHistory>, AppError> {
@@ -426,9 +440,10 @@ pub async fn get_order_history(
         order_id, requester_id
     );
 
-    get_order(pool, order_id, requester_id).await?;
+    get_order(order_repo, order_id, requester_id).await?;
 
-    let history = history_repo::get_status_history(pool, order_id)
+    let history = order_status_repo
+        .get_status_history(order_id)
         .await
         .map_err(|e| {
             error!("❌ [get_order_history] DB error: {:?}", e);
@@ -441,7 +456,9 @@ pub async fn get_order_history(
 
 // ── cancel_order ──────────────────────────────────────────────────
 pub async fn cancel_order(
-    pool: &PgPool,
+    order_repo: &dyn OrderRepository,
+    inventory_client: &dyn InventoryClient,
+    wallet_client: &dyn WalletClient,
     order_id: Uuid,
     requester_id: Uuid,
     role: &Role,
@@ -453,7 +470,7 @@ pub async fn cancel_order(
     );
 
     let updated = cancel_status(
-        pool,
+        order_repo,
         order_id,
         requester_id,
         role,
@@ -480,21 +497,25 @@ pub async fn cancel_order(
         "📦 [cancel_order] releasing stock product_id={} qty={}",
         pid, updated.quantity
     );
-    let _ = release_stock(pid, order_id, updated.quantity).await;
+    let _ = inventory_client
+        .release_stock(pid, order_id, updated.quantity)
+        .await;
 
     let rd = format!("Refund Order #{} - dibatalkan", order_id);
     debug!(
         "💳 [cancel_order] refunding wallet titipers_id={} amount={}",
         updated.titipers_id, updated.total_price
     );
-    let _ = refund_wallet(updated.titipers_id, order_id, updated.total_price, &rd).await;
+    let _ = wallet_client
+        .refund_wallet(updated.titipers_id, order_id, updated.total_price, &rd)
+        .await;
 
     Ok(updated)
 }
 
 // ── my_purchases & my_sales ───────────────────────────────────────
 pub async fn my_purchases(
-    pool: &PgPool,
+    order_repo: &dyn OrderRepository,
     titipers_id: Uuid,
     params: PaginationParams,
 ) -> Result<(Vec<Order>, i64), AppError> {
@@ -509,19 +530,17 @@ pub async fn my_purchases(
     };
     let filter = Some(&order_filter);
 
-    let result = order_repo::find_all(pool, filter, &params)
-        .await
-        .map_err(|e| {
-            error!("❌ [my_purchases] DB error: {:?}", e);
-            e
-        })?;
+    let result = order_repo.find_all(filter, &params).await.map_err(|e| {
+        error!("❌ [my_purchases] DB error: {:?}", e);
+        e
+    })?;
 
     debug!("✅ [my_purchases] found {} orders", result.0.len());
     Ok(result)
 }
 
 pub async fn my_sales(
-    pool: &PgPool,
+    order_repo: &dyn OrderRepository,
     jastiper_id: Uuid,
     params: PaginationParams,
 ) -> Result<(Vec<Order>, i64), AppError> {
@@ -536,12 +555,10 @@ pub async fn my_sales(
     };
     let filter = Some(&order_filter);
 
-    let result = order_repo::find_all(pool, filter, &params)
-        .await
-        .map_err(|e| {
-            error!("❌ [my_sales] DB error: {:?}", e);
-            e
-        })?;
+    let result = order_repo.find_all(filter, &params).await.map_err(|e| {
+        error!("❌ [my_sales] DB error: {:?}", e);
+        e
+    })?;
 
     debug!("✅ [my_sales] found {} orders", result.0.len());
     Ok(result)
