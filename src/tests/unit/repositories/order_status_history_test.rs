@@ -1,15 +1,17 @@
 #[cfg(test)]
 mod tests {
+    use serde_json::json;
     use sqlx::PgPool;
     use uuid::Uuid;
 
-    use crate::models::order::{CreateOrderRequest, ShippingAddress};
+    use crate::models::order::{CreateOrderRequest, PriceBreakdown, ShippingAddress};
     use crate::models::order_state::OrderStatus;
     use crate::models::role::Role;
     use crate::repositories::{order, order_status_history};
 
-    async fn create_dummy_order(pool: &PgPool) -> (Uuid, crate::models::order::Order) {
+    async fn create_dummy_order(pool: &PgPool) -> (Uuid, order::Order) {
         let titipers_id = Uuid::new_v4();
+        let jastiper_id = Uuid::new_v4();
 
         let req = CreateOrderRequest {
             product_id: Uuid::new_v4(),
@@ -28,15 +30,28 @@ mod tests {
             note_to_jastiper: None,
         };
 
+        let snapshot = json!({
+            "product_id": "3b07c9e0-8e1b-4fbb-9dd2-3e6aa79111fb",
+            "name": "Sepatu Nike Air Force 1",
+            "description": "Sepatu original limited edition",
+            "image_url": "https://example.com/images/sepatu-nike.jpg",
+            "origin_country": "Vietnam",
+            "purchase_date": "2025-12-01",
+            "unit_price": 850_000,
+            "service_fee": 50_000
+        });
+
         let created = order::create(
             pool,
             titipers_id,
-            Uuid::new_v4(),
+            jastiper_id,
             req,
-            serde_json::json!({"name": "Produk Test"}),
-            10_000,
-            1_000,
-            11_000,
+            snapshot,
+            PriceBreakdown {
+                unit_price: 10_000,
+                service_fee: 1_000,
+                total_price: 11_000,
+            },
         )
         .await
         .expect("Gagal membuat dummy order");
