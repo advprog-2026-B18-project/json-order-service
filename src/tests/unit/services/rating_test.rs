@@ -1,266 +1,649 @@
-#[cfg(test)]
-mod tests {
-    mod rating_product {
-        use crate::models::order_state::OrderStatus;
-        use crate::models::rating_product::CreateRatingProductRequest;
-        use chrono::Utc;
-        use serde_json::json;
-        use uuid::Uuid;
-        use validator::Validate;
+use uuid::Uuid;
 
-        fn make_completed_order(titipers_id: Uuid) -> crate::models::order::Order {
-            crate::models::order::Order {
-                order_id: Uuid::new_v4(),
-                titipers_id,
-                jastiper_id: Uuid::new_v4(),
-                product_id: Uuid::new_v4(),
-                product_snapshot: json!({ "product_id": Uuid::new_v4() }),
-                quantity: 1,
-                unit_price: 10_000,
-                service_fee: 0,
-                total_price: 10_000,
-                status: OrderStatus::Completed,
-                shipping_address: json!({}),
-                note_to_jastiper: None,
-                tracking_number: None,
-                courier: None,
-                cancellation_reason: None,
-                cancelled_by: None,
-                completed_at: Some(Utc::now()),
-                created_at: Utc::now(),
-                updated_at: Utc::now(),
-            }
-        }
+use crate::error::AppError;
+use crate::models::order_state::OrderStatus;
+use crate::models::rating_jastiper::{CreateRatingJastiperRequest, RatingJastiper};
+use crate::models::rating_product::{CreateRatingProductRequest, RatingProduct};
+use crate::ports::order_repository::MockOrderRepository;
+use crate::ports::rating_jastiper_repository::MockRatingJastiperRepository;
+use crate::ports::rating_product_repository::MockRatingProductRepository;
+use crate::services::{rating_jastiper, rating_product};
 
-        // Rating hanya bisa diberikan jika order sudah COMPLETED
-        #[test]
-        fn test_rating_hanya_untuk_order_completed() {
-            let titipers_id = Uuid::new_v4();
-            let order = make_completed_order(titipers_id);
-            assert_eq!(order.status, OrderStatus::Completed);
-        }
+use serde_json::json;
 
-        // Rating tidak bisa diberikan jika order masih PENDING
-        #[test]
-        fn test_rating_ditolak_jika_order_pending() {
-            let titipers_id = Uuid::new_v4();
-            let mut order = make_completed_order(titipers_id);
-            order.status = OrderStatus::Pending;
+// ─── Helpers ────────────────────────────────────────────────────────────────
 
-            let not_completed = order.status != OrderStatus::Completed;
-            assert!(not_completed);
-        }
-
-        // Requester harus merupakan titipers pemilik order
-        #[test]
-        fn test_forbidden_jika_bukan_titipers_pemilik() {
-            let titipers_id = Uuid::new_v4();
-            let orang_lain = Uuid::new_v4();
-            let order = make_completed_order(titipers_id);
-
-            let is_forbidden = order.titipers_id != orang_lain;
-            assert!(is_forbidden);
-        }
-
-        // Validasi rating: harus antara 1.0 - 5.0
-        #[test]
-        fn test_rating_valid_1_sampai_5() {
-            let req = CreateRatingProductRequest {
-                product_rating: 4.5,
-                product_review: None,
-                product_images: None,
-            };
-            assert!(req.validate().is_ok());
-        }
-
-        #[test]
-        fn test_rating_kurang_dari_1_invalid() {
-            let req = CreateRatingProductRequest {
-                product_rating: 0.5,
-                product_review: None,
-                product_images: None,
-            };
-            assert!(req.validate().is_err());
-        }
-
-        #[test]
-        fn test_rating_lebih_dari_5_invalid() {
-            let req = CreateRatingProductRequest {
-                product_rating: 5.5,
-                product_review: None,
-                product_images: None,
-            };
-            assert!(req.validate().is_err());
-        }
-
-        // Review max 1000 karakter
-        #[test]
-        fn test_review_max_1000_karakter() {
-            let req = CreateRatingProductRequest {
-                product_rating: 4.0,
-                product_review: Some("x".repeat(1001)),
-                product_images: None,
-            };
-            assert!(req.validate().is_err());
-        }
-
-        // product_images max 3 item
-        #[test]
-        fn test_product_images_max_3() {
-            let req = CreateRatingProductRequest {
-                product_rating: 4.0,
-                product_review: None,
-                product_images: Some(vec![
-                    "url1".to_string(),
-                    "url2".to_string(),
-                    "url3".to_string(),
-                    "url4".to_string(),
-                ]),
-            };
-            assert!(req.validate().is_err());
-        }
-
-        // product_images tepat 3 item valid
-        #[test]
-        fn test_product_images_tepat_3_valid() {
-            let req = CreateRatingProductRequest {
-                product_rating: 4.0,
-                product_review: None,
-                product_images: Some(vec![
-                    "url1".to_string(),
-                    "url2".to_string(),
-                    "url3".to_string(),
-                ]),
-            };
-            assert!(req.validate().is_ok());
-        }
-
-        // product_images kosong (None) valid
-        #[test]
-        fn test_product_images_none_valid() {
-            let req = CreateRatingProductRequest {
-                product_rating: 3.0,
-                product_review: None,
-                product_images: None,
-            };
-            assert!(req.validate().is_ok());
-        }
+fn make_order(
+    order_id: Uuid,
+    titipers_id: Uuid,
+    jastiper_id: Uuid,
+    status: OrderStatus,
+) -> crate::models::order::Order {
+    crate::models::order::Order {
+        order_id,
+        titipers_id,
+        jastiper_id,
+        product_id: Uuid::new_v4(),
+        product_snapshot: json!({ "product_id": Uuid::new_v4() }),
+        quantity: 1,
+        unit_price: 10_000,
+        service_fee: 1_000,
+        total_price: 11_000,
+        status,
+        shipping_address: json!({}),
+        note_to_jastiper: None,
+        tracking_number: None,
+        courier: None,
+        cancellation_reason: None,
+        cancelled_by: None,
+        completed_at: None,
+        created_at: chrono::Utc::now(),
+        updated_at: chrono::Utc::now(),
     }
+}
 
-    mod rating_jastiper {
-        use crate::models::order_state::OrderStatus;
-        use crate::models::rating_jastiper::CreateRatingJastiperRequest;
-        use chrono::Utc;
-        use serde_json::json;
-        use uuid::Uuid;
-        use validator::Validate;
-
-        fn make_completed_order(titipers_id: Uuid) -> crate::models::order::Order {
-            crate::models::order::Order {
-                order_id: Uuid::new_v4(),
-                titipers_id,
-                jastiper_id: Uuid::new_v4(),
-                product_id: Uuid::new_v4(),
-                product_snapshot: json!({}),
-                quantity: 1,
-                unit_price: 10_000,
-                service_fee: 0,
-                total_price: 10_000,
-                status: OrderStatus::Completed,
-                shipping_address: json!({}),
-                note_to_jastiper: None,
-                tracking_number: None,
-                courier: None,
-                cancellation_reason: None,
-                cancelled_by: None,
-                completed_at: Some(Utc::now()),
-                created_at: Utc::now(),
-                updated_at: Utc::now(),
-            }
-        }
-
-        // Rating jastiper hanya bisa jika order COMPLETED
-        #[test]
-        fn test_rating_jastiper_hanya_untuk_completed() {
-            let titipers_id = Uuid::new_v4();
-            let order = make_completed_order(titipers_id);
-            assert_eq!(order.status, OrderStatus::Completed);
-        }
-
-        // Rating jastiper ditolak jika order belum COMPLETED
-        #[test]
-        fn test_rating_jastiper_ditolak_jika_shipped() {
-            let titipers_id = Uuid::new_v4();
-            let mut order = make_completed_order(titipers_id);
-            order.status = OrderStatus::Shipped;
-
-            let not_completed = order.status != OrderStatus::Completed;
-            assert!(not_completed);
-        }
-
-        // Hanya titipers pemilik order yang bisa rating jastiper
-        #[test]
-        fn test_forbidden_jika_bukan_titipers_pemilik() {
-            let titipers_id = Uuid::new_v4();
-            let orang_lain = Uuid::new_v4();
-            let order = make_completed_order(titipers_id);
-
-            let is_forbidden = order.titipers_id != orang_lain;
-            assert!(is_forbidden);
-        }
-
-        // Validasi rating: harus antara 1.0 - 5.0
-        #[test]
-        fn test_rating_valid() {
-            let req = CreateRatingJastiperRequest {
-                jastiper_rating: 5.0,
-                jastiper_review: None,
-            };
-            assert!(req.validate().is_ok());
-        }
-
-        #[test]
-        fn test_rating_di_bawah_1_invalid() {
-            let req = CreateRatingJastiperRequest {
-                jastiper_rating: 0.0,
-                jastiper_review: None,
-            };
-            assert!(req.validate().is_err());
-        }
-
-        #[test]
-        fn test_rating_di_atas_5_invalid() {
-            let req = CreateRatingJastiperRequest {
-                jastiper_rating: 6.0,
-                jastiper_review: None,
-            };
-            assert!(req.validate().is_err());
-        }
-
-        // Review max 1000 karakter
-        #[test]
-        fn test_review_max_1000_karakter() {
-            let req = CreateRatingJastiperRequest {
-                jastiper_rating: 4.0,
-                jastiper_review: Some("x".repeat(1001)),
-            };
-            assert!(req.validate().is_err());
-        }
-
-        #[test]
-        fn test_review_tepat_1000_karakter_valid() {
-            let req = CreateRatingJastiperRequest {
-                jastiper_rating: 4.0,
-                jastiper_review: Some("x".repeat(1000)),
-            };
-            assert!(req.validate().is_ok());
-        }
-
-        // Duplicate rating: cek jika rating sudah ada (simulasi logic)
-        #[test]
-        fn test_duplicate_rating_terdeteksi() {
-            let rating_exists = true;
-            assert!(rating_exists);
-        }
+fn make_rating_jastiper_request() -> CreateRatingJastiperRequest {
+    CreateRatingJastiperRequest {
+        jastiper_rating: 5.0,
+        jastiper_review: Some("Jastiper sangat responsif".to_string()),
     }
+}
+
+fn make_rating_product_request() -> CreateRatingProductRequest {
+    CreateRatingProductRequest {
+        product_rating: 4.5,
+        product_review: Some("Produk sesuai deskripsi".to_string()),
+        product_images: Some(vec!["https://img.example.com/1.jpg".to_string()]),
+    }
+}
+
+fn make_rating_jastiper(order_id: Uuid, titipers_id: Uuid) -> RatingJastiper {
+    RatingJastiper {
+        rating_jastiper_id: Uuid::new_v4(),
+        order_id,
+        titipers_id,
+        jastiper_rating: 5.0,
+        jastiper_review: Some("Bagus".to_string()),
+        created_at: chrono::Utc::now(),
+    }
+}
+
+fn make_rating_product(order_id: Uuid, titipers_id: Uuid) -> RatingProduct {
+    RatingProduct {
+        rating_product_id: Uuid::new_v4(),
+        order_id,
+        titipers_id,
+        product_rating: 4.5,
+        product_review: Some("Sesuai deskripsi".to_string()),
+        product_images: Vec::new(),
+        created_at: chrono::Utc::now(),
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// rating_jastiper::submit_rating_jastiper
+// ═══════════════════════════════════════════════════════════════════════════
+
+#[tokio::test]
+async fn submit_rating_jastiper_sukses() {
+    let titipers_id = Uuid::new_v4();
+    let jastiper_id = Uuid::new_v4();
+    let order_id = Uuid::new_v4();
+
+    let mut order_repo = MockOrderRepository::new();
+    let mut rating_repo = MockRatingJastiperRepository::new();
+
+    let order = make_order(order_id, titipers_id, jastiper_id, OrderStatus::Completed);
+    let expected_rating = make_rating_jastiper(order_id, titipers_id);
+
+    order_repo
+        .expect_find_by_id()
+        .returning(move |_| Ok(Some(order.clone())));
+
+    rating_repo
+        .expect_find_by_order_id()
+        .returning(|_| Ok(None));
+
+    rating_repo
+        .expect_create()
+        .returning(move |_, _, _| Ok(expected_rating.clone()));
+
+    let req = make_rating_jastiper_request();
+    let result = rating_jastiper::submit_rating_jastiper(
+        &order_repo,
+        &rating_repo,
+        order_id,
+        titipers_id,
+        req,
+    )
+    .await;
+
+    assert!(result.is_ok());
+}
+
+#[tokio::test]
+async fn submit_rating_jastiper_gagal_order_tidak_ditemukan() {
+    let mut order_repo = MockOrderRepository::new();
+    let rating_repo = MockRatingJastiperRepository::new();
+
+    order_repo.expect_find_by_id().returning(|_| Ok(None));
+
+    let req = make_rating_jastiper_request();
+    let result = rating_jastiper::submit_rating_jastiper(
+        &order_repo,
+        &rating_repo,
+        Uuid::new_v4(),
+        Uuid::new_v4(),
+        req,
+    )
+    .await;
+
+    assert!(matches!(result, Err(AppError::NotFound(_))));
+}
+
+#[tokio::test]
+async fn submit_rating_jastiper_gagal_bukan_titipers_pemilik() {
+    let titipers_id = Uuid::new_v4();
+    let jastiper_id = Uuid::new_v4();
+    let orang_lain = Uuid::new_v4();
+    let order_id = Uuid::new_v4();
+
+    let mut order_repo = MockOrderRepository::new();
+    let rating_repo = MockRatingJastiperRepository::new();
+
+    let order = make_order(order_id, titipers_id, jastiper_id, OrderStatus::Completed);
+
+    order_repo
+        .expect_find_by_id()
+        .returning(move |_| Ok(Some(order.clone())));
+
+    let req = make_rating_jastiper_request();
+    let result = rating_jastiper::submit_rating_jastiper(
+        &order_repo,
+        &rating_repo,
+        order_id,
+        orang_lain,
+        req,
+    )
+    .await;
+
+    assert!(matches!(result, Err(AppError::Forbidden(_))));
+}
+
+#[tokio::test]
+async fn submit_rating_jastiper_gagal_order_belum_completed() {
+    let titipers_id = Uuid::new_v4();
+    let jastiper_id = Uuid::new_v4();
+    let order_id = Uuid::new_v4();
+
+    let mut order_repo = MockOrderRepository::new();
+    let rating_repo = MockRatingJastiperRepository::new();
+
+    // Status bukan Completed, misal Shipped
+    let order = make_order(order_id, titipers_id, jastiper_id, OrderStatus::Shipped);
+
+    order_repo
+        .expect_find_by_id()
+        .returning(move |_| Ok(Some(order.clone())));
+
+    let req = make_rating_jastiper_request();
+    let result = rating_jastiper::submit_rating_jastiper(
+        &order_repo,
+        &rating_repo,
+        order_id,
+        titipers_id,
+        req,
+    )
+    .await;
+
+    assert!(matches!(result, Err(AppError::UnprocessableEntity(_))));
+}
+
+#[tokio::test]
+async fn submit_rating_jastiper_gagal_sudah_pernah_rating() {
+    let titipers_id = Uuid::new_v4();
+    let jastiper_id = Uuid::new_v4();
+    let order_id = Uuid::new_v4();
+
+    let mut order_repo = MockOrderRepository::new();
+    let mut rating_repo = MockRatingJastiperRepository::new();
+
+    let order = make_order(order_id, titipers_id, jastiper_id, OrderStatus::Completed);
+    let existing_rating = make_rating_jastiper(order_id, titipers_id);
+
+    order_repo
+        .expect_find_by_id()
+        .returning(move |_| Ok(Some(order.clone())));
+
+    rating_repo
+        .expect_find_by_order_id()
+        .returning(move |_| Ok(Some(existing_rating.clone())));
+
+    let req = make_rating_jastiper_request();
+    let result = rating_jastiper::submit_rating_jastiper(
+        &order_repo,
+        &rating_repo,
+        order_id,
+        titipers_id,
+        req,
+    )
+    .await;
+
+    assert!(matches!(result, Err(AppError::Conflict(_))));
+}
+
+#[tokio::test]
+async fn submit_rating_jastiper_gagal_db_error_saat_create() {
+    let titipers_id = Uuid::new_v4();
+    let jastiper_id = Uuid::new_v4();
+    let order_id = Uuid::new_v4();
+
+    let mut order_repo = MockOrderRepository::new();
+    let mut rating_repo = MockRatingJastiperRepository::new();
+
+    let order = make_order(order_id, titipers_id, jastiper_id, OrderStatus::Completed);
+
+    order_repo
+        .expect_find_by_id()
+        .returning(move |_| Ok(Some(order.clone())));
+
+    rating_repo
+        .expect_find_by_order_id()
+        .returning(|_| Ok(None));
+
+    rating_repo
+        .expect_create()
+        .returning(|_, _, _| Err(AppError::Internal));
+
+    let req = make_rating_jastiper_request();
+    let result = rating_jastiper::submit_rating_jastiper(
+        &order_repo,
+        &rating_repo,
+        order_id,
+        titipers_id,
+        req,
+    )
+    .await;
+
+    assert!(result.is_err());
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// rating_jastiper::get_rating
+// ═══════════════════════════════════════════════════════════════════════════
+
+#[tokio::test]
+async fn get_rating_jastiper_sukses_sebagai_titipers() {
+    let titipers_id = Uuid::new_v4();
+    let jastiper_id = Uuid::new_v4();
+    let order_id = Uuid::new_v4();
+
+    let mut order_repo = MockOrderRepository::new();
+    let mut rating_repo = MockRatingJastiperRepository::new();
+
+    let order = make_order(order_id, titipers_id, jastiper_id, OrderStatus::Completed);
+    let rating = make_rating_jastiper(order_id, titipers_id);
+
+    order_repo
+        .expect_find_by_id()
+        .returning(move |_| Ok(Some(order.clone())));
+
+    rating_repo
+        .expect_find_by_order_id()
+        .returning(move |_| Ok(Some(rating.clone())));
+
+    let result =
+        rating_jastiper::get_rating(&order_repo, &rating_repo, order_id, titipers_id).await;
+    assert!(result.is_ok());
+}
+
+#[tokio::test]
+async fn get_rating_jastiper_sukses_sebagai_jastiper() {
+    let titipers_id = Uuid::new_v4();
+    let jastiper_id = Uuid::new_v4();
+    let order_id = Uuid::new_v4();
+
+    let mut order_repo = MockOrderRepository::new();
+    let mut rating_repo = MockRatingJastiperRepository::new();
+
+    let order = make_order(order_id, titipers_id, jastiper_id, OrderStatus::Completed);
+    let rating = make_rating_jastiper(order_id, titipers_id);
+
+    order_repo
+        .expect_find_by_id()
+        .returning(move |_| Ok(Some(order.clone())));
+
+    rating_repo
+        .expect_find_by_order_id()
+        .returning(move |_| Ok(Some(rating.clone())));
+
+    let result =
+        rating_jastiper::get_rating(&order_repo, &rating_repo, order_id, jastiper_id).await;
+    assert!(result.is_ok());
+}
+
+#[tokio::test]
+async fn get_rating_jastiper_gagal_order_tidak_ditemukan() {
+    let mut order_repo = MockOrderRepository::new();
+    let rating_repo = MockRatingJastiperRepository::new();
+
+    order_repo.expect_find_by_id().returning(|_| Ok(None));
+
+    let result =
+        rating_jastiper::get_rating(&order_repo, &rating_repo, Uuid::new_v4(), Uuid::new_v4())
+            .await;
+
+    assert!(matches!(result, Err(AppError::NotFound(_))));
+}
+
+#[tokio::test]
+async fn get_rating_jastiper_gagal_bukan_pemilik_order() {
+    let titipers_id = Uuid::new_v4();
+    let jastiper_id = Uuid::new_v4();
+    let orang_lain = Uuid::new_v4();
+    let order_id = Uuid::new_v4();
+
+    let mut order_repo = MockOrderRepository::new();
+    let rating_repo = MockRatingJastiperRepository::new();
+
+    let order = make_order(order_id, titipers_id, jastiper_id, OrderStatus::Completed);
+
+    order_repo
+        .expect_find_by_id()
+        .returning(move |_| Ok(Some(order.clone())));
+
+    let result = rating_jastiper::get_rating(&order_repo, &rating_repo, order_id, orang_lain).await;
+
+    assert!(matches!(result, Err(AppError::Forbidden(_))));
+}
+
+#[tokio::test]
+async fn get_rating_jastiper_gagal_rating_belum_ada() {
+    let titipers_id = Uuid::new_v4();
+    let jastiper_id = Uuid::new_v4();
+    let order_id = Uuid::new_v4();
+
+    let mut order_repo = MockOrderRepository::new();
+    let mut rating_repo = MockRatingJastiperRepository::new();
+
+    let order = make_order(order_id, titipers_id, jastiper_id, OrderStatus::Completed);
+
+    order_repo
+        .expect_find_by_id()
+        .returning(move |_| Ok(Some(order.clone())));
+
+    rating_repo
+        .expect_find_by_order_id()
+        .returning(|_| Ok(None));
+
+    let result =
+        rating_jastiper::get_rating(&order_repo, &rating_repo, order_id, titipers_id).await;
+    assert!(matches!(result, Err(AppError::NotFound(_))));
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// rating_product::submit_rating
+// ═══════════════════════════════════════════════════════════════════════════
+
+#[tokio::test]
+async fn submit_rating_product_sukses() {
+    let titipers_id = Uuid::new_v4();
+    let jastiper_id = Uuid::new_v4();
+    let order_id = Uuid::new_v4();
+
+    let mut order_repo = MockOrderRepository::new();
+    let mut rating_repo = MockRatingProductRepository::new();
+
+    let order = make_order(order_id, titipers_id, jastiper_id, OrderStatus::Completed);
+    let expected_rating = make_rating_product(order_id, titipers_id);
+
+    order_repo
+        .expect_find_by_id()
+        .returning(move |_| Ok(Some(order.clone())));
+
+    rating_repo
+        .expect_find_by_order_id()
+        .returning(|_| Ok(None));
+
+    rating_repo
+        .expect_create()
+        .returning(move |_, _, _| Ok(expected_rating.clone()));
+
+    let req = make_rating_product_request();
+    let result =
+        rating_product::submit_rating(&order_repo, &rating_repo, order_id, titipers_id, req).await;
+
+    assert!(result.is_ok());
+}
+
+#[tokio::test]
+async fn submit_rating_product_gagal_order_tidak_ditemukan() {
+    let mut order_repo = MockOrderRepository::new();
+    let rating_repo = MockRatingProductRepository::new();
+
+    order_repo.expect_find_by_id().returning(|_| Ok(None));
+
+    let req = make_rating_product_request();
+    let result = rating_product::submit_rating(
+        &order_repo,
+        &rating_repo,
+        Uuid::new_v4(),
+        Uuid::new_v4(),
+        req,
+    )
+    .await;
+
+    assert!(matches!(result, Err(AppError::NotFound(_))));
+}
+
+#[tokio::test]
+async fn submit_rating_product_gagal_bukan_titipers_pemilik() {
+    let titipers_id = Uuid::new_v4();
+    let jastiper_id = Uuid::new_v4();
+    let orang_lain = Uuid::new_v4();
+    let order_id = Uuid::new_v4();
+
+    let mut order_repo = MockOrderRepository::new();
+    let rating_repo = MockRatingProductRepository::new();
+
+    let order = make_order(order_id, titipers_id, jastiper_id, OrderStatus::Completed);
+
+    order_repo
+        .expect_find_by_id()
+        .returning(move |_| Ok(Some(order.clone())));
+
+    let req = make_rating_product_request();
+    let result =
+        rating_product::submit_rating(&order_repo, &rating_repo, order_id, orang_lain, req).await;
+
+    assert!(matches!(result, Err(AppError::Forbidden(_))));
+}
+
+#[tokio::test]
+async fn submit_rating_product_gagal_order_belum_completed() {
+    let titipers_id = Uuid::new_v4();
+    let jastiper_id = Uuid::new_v4();
+    let order_id = Uuid::new_v4();
+
+    let mut order_repo = MockOrderRepository::new();
+    let rating_repo = MockRatingProductRepository::new();
+
+    // Status Paid bukan Completed
+    let order = make_order(order_id, titipers_id, jastiper_id, OrderStatus::Paid);
+
+    order_repo
+        .expect_find_by_id()
+        .returning(move |_| Ok(Some(order.clone())));
+
+    let req = make_rating_product_request();
+    let result =
+        rating_product::submit_rating(&order_repo, &rating_repo, order_id, titipers_id, req).await;
+
+    assert!(matches!(result, Err(AppError::UnprocessableEntity(_))));
+}
+
+#[tokio::test]
+async fn submit_rating_product_gagal_sudah_pernah_rating() {
+    let titipers_id = Uuid::new_v4();
+    let jastiper_id = Uuid::new_v4();
+    let order_id = Uuid::new_v4();
+
+    let mut order_repo = MockOrderRepository::new();
+    let mut rating_repo = MockRatingProductRepository::new();
+
+    let order = make_order(order_id, titipers_id, jastiper_id, OrderStatus::Completed);
+    let existing = make_rating_product(order_id, titipers_id);
+
+    order_repo
+        .expect_find_by_id()
+        .returning(move |_| Ok(Some(order.clone())));
+
+    rating_repo
+        .expect_find_by_order_id()
+        .returning(move |_| Ok(Some(existing.clone())));
+
+    let req = make_rating_product_request();
+    let result =
+        rating_product::submit_rating(&order_repo, &rating_repo, order_id, titipers_id, req).await;
+
+    assert!(matches!(result, Err(AppError::Conflict(_))));
+}
+
+#[tokio::test]
+async fn submit_rating_product_gagal_db_error_saat_create() {
+    let titipers_id = Uuid::new_v4();
+    let jastiper_id = Uuid::new_v4();
+    let order_id = Uuid::new_v4();
+
+    let mut order_repo = MockOrderRepository::new();
+    let mut rating_repo = MockRatingProductRepository::new();
+
+    let order = make_order(order_id, titipers_id, jastiper_id, OrderStatus::Completed);
+
+    order_repo
+        .expect_find_by_id()
+        .returning(move |_| Ok(Some(order.clone())));
+
+    rating_repo
+        .expect_find_by_order_id()
+        .returning(|_| Ok(None));
+
+    rating_repo
+        .expect_create()
+        .returning(|_, _, _| Err(AppError::Internal));
+
+    let req = make_rating_product_request();
+    let result =
+        rating_product::submit_rating(&order_repo, &rating_repo, order_id, titipers_id, req).await;
+
+    assert!(result.is_err());
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// rating_product::get_rating
+// ═══════════════════════════════════════════════════════════════════════════
+
+#[tokio::test]
+async fn get_rating_product_sukses_sebagai_titipers() {
+    let titipers_id = Uuid::new_v4();
+    let jastiper_id = Uuid::new_v4();
+    let order_id = Uuid::new_v4();
+
+    let mut order_repo = MockOrderRepository::new();
+    let mut rating_repo = MockRatingProductRepository::new();
+
+    let order = make_order(order_id, titipers_id, jastiper_id, OrderStatus::Completed);
+    let rating = make_rating_product(order_id, titipers_id);
+
+    order_repo
+        .expect_find_by_id()
+        .returning(move |_| Ok(Some(order.clone())));
+
+    rating_repo
+        .expect_find_by_order_id()
+        .returning(move |_| Ok(Some(rating.clone())));
+
+    let result = rating_product::get_rating(&order_repo, &rating_repo, order_id, titipers_id).await;
+    assert!(result.is_ok());
+}
+
+#[tokio::test]
+async fn get_rating_product_sukses_sebagai_jastiper() {
+    let titipers_id = Uuid::new_v4();
+    let jastiper_id = Uuid::new_v4();
+    let order_id = Uuid::new_v4();
+
+    let mut order_repo = MockOrderRepository::new();
+    let mut rating_repo = MockRatingProductRepository::new();
+
+    let order = make_order(order_id, titipers_id, jastiper_id, OrderStatus::Completed);
+    let rating = make_rating_product(order_id, titipers_id);
+
+    order_repo
+        .expect_find_by_id()
+        .returning(move |_| Ok(Some(order.clone())));
+
+    rating_repo
+        .expect_find_by_order_id()
+        .returning(move |_| Ok(Some(rating.clone())));
+
+    let result = rating_product::get_rating(&order_repo, &rating_repo, order_id, jastiper_id).await;
+    assert!(result.is_ok());
+}
+
+#[tokio::test]
+async fn get_rating_product_gagal_order_tidak_ditemukan() {
+    let mut order_repo = MockOrderRepository::new();
+    let rating_repo = MockRatingProductRepository::new();
+
+    order_repo.expect_find_by_id().returning(|_| Ok(None));
+
+    let result =
+        rating_product::get_rating(&order_repo, &rating_repo, Uuid::new_v4(), Uuid::new_v4()).await;
+
+    assert!(matches!(result, Err(AppError::NotFound(_))));
+}
+
+#[tokio::test]
+async fn get_rating_product_gagal_bukan_pemilik_order() {
+    let titipers_id = Uuid::new_v4();
+    let jastiper_id = Uuid::new_v4();
+    let orang_lain = Uuid::new_v4();
+    let order_id = Uuid::new_v4();
+
+    let mut order_repo = MockOrderRepository::new();
+    let rating_repo = MockRatingProductRepository::new();
+
+    let order = make_order(order_id, titipers_id, jastiper_id, OrderStatus::Completed);
+
+    order_repo
+        .expect_find_by_id()
+        .returning(move |_| Ok(Some(order.clone())));
+
+    let result = rating_product::get_rating(&order_repo, &rating_repo, order_id, orang_lain).await;
+
+    assert!(matches!(result, Err(AppError::Forbidden(_))));
+}
+
+#[tokio::test]
+async fn get_rating_product_gagal_rating_belum_ada() {
+    let titipers_id = Uuid::new_v4();
+    let jastiper_id = Uuid::new_v4();
+    let order_id = Uuid::new_v4();
+
+    let mut order_repo = MockOrderRepository::new();
+    let mut rating_repo = MockRatingProductRepository::new();
+
+    let order = make_order(order_id, titipers_id, jastiper_id, OrderStatus::Completed);
+
+    order_repo
+        .expect_find_by_id()
+        .returning(move |_| Ok(Some(order.clone())));
+
+    rating_repo
+        .expect_find_by_order_id()
+        .returning(|_| Ok(None));
+
+    let result = rating_product::get_rating(&order_repo, &rating_repo, order_id, titipers_id).await;
+    assert!(matches!(result, Err(AppError::NotFound(_))));
 }

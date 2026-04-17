@@ -1,319 +1,415 @@
-#[cfg(test)]
-mod tests {
-    use uuid::Uuid;
-    use wiremock::matchers::{method, path};
-    use wiremock::{Mock, MockServer, ResponseTemplate};
+use mockito::Server;
+use serde_json::json;
+use uuid::Uuid;
 
-    use crate::services::inventory_client::{
-        fetch_product, release_stock, reserve_stock, send_product_rating,
-    };
+fn setup() {
+    unsafe {
+        std::env::set_var("INTERNAL_SERVICE_KEY", "test-key");
+    }
+}
 
-    // reserve_stock berhasil (200)
-    #[tokio::test]
-    async fn test_reserve_stock_berhasil() {
-        let server = MockServer::start().await;
-        let product_id = Uuid::new_v4();
+#[tokio::test]
+#[serial_test::serial]
+async fn reserve_stock_sukses() {
+    setup();
+    let mut server = Server::new_async().await;
+    let product_id = Uuid::new_v4();
+    unsafe {
+        std::env::set_var("INVENTORY_SERVICE_URL", server.url());
+    }
 
-        Mock::given(method("POST"))
-            .and(path(format!(
-                "/internal/products/{}/stock/reserve",
-                product_id
-            )))
-            .respond_with(ResponseTemplate::new(200))
-            .mount(&server)
-            .await;
-
-        let order_id = Uuid::new_v4();
-        let uri = server.uri();
-        let result = temp_env::async_with_vars(
-            [
-                ("INVENTORY_SERVICE_URL", Some(uri.as_str())),
-                ("INTERNAL_SERVICE_KEY", Some("test-key")),
-            ],
-            async move { reserve_stock(product_id, order_id, 2).await },
+    server
+        .mock(
+            "POST",
+            format!("/products/internal/{}/stock/reserve", product_id).as_str(),
         )
+        .with_status(200)
+        .create_async()
         .await;
 
-        assert!(result.is_ok());
+    let result =
+        crate::services::inventory_client::reserve_stock(product_id, Uuid::new_v4(), 2).await;
+
+    assert!(result.is_ok());
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn reserve_stock_gagal_produk_tidak_ditemukan_404() {
+    setup();
+    let mut server = Server::new_async().await;
+    let product_id = Uuid::new_v4();
+    unsafe {
+        std::env::set_var("INVENTORY_SERVICE_URL", server.url());
     }
 
-    // reserve_stock stok tidak cukup (409) → Conflict
-    #[tokio::test]
-    async fn test_reserve_stock_tidak_cukup() {
-        let server = MockServer::start().await;
-        let product_id = Uuid::new_v4();
-
-        Mock::given(method("POST"))
-            .and(path(format!(
-                "/internal/products/{}/stock/reserve",
-                product_id
-            )))
-            .respond_with(ResponseTemplate::new(409))
-            .mount(&server)
-            .await;
-
-        let order_id = Uuid::new_v4();
-        let uri = server.uri();
-        let result = temp_env::async_with_vars(
-            [
-                ("INVENTORY_SERVICE_URL", Some(uri.as_str())),
-                ("INTERNAL_SERVICE_KEY", Some("test-key")),
-            ],
-            async move { reserve_stock(product_id, order_id, 2).await },
+    server
+        .mock(
+            "POST",
+            format!("/products/internal/{}/stock/reserve", product_id).as_str(),
         )
+        .with_status(404)
+        .create_async()
         .await;
 
-        assert!(result.is_err());
-        match result.unwrap_err() {
-            crate::error::AppError::Conflict(_) => {}
-            e => panic!("Expected Conflict, got {:?}", e),
-        }
+    let result =
+        crate::services::inventory_client::reserve_stock(product_id, Uuid::new_v4(), 1).await;
+
+    assert!(matches!(result, Err(crate::error::AppError::NotFound(_))));
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn reserve_stock_gagal_stok_tidak_cukup_409() {
+    setup();
+    let mut server = Server::new_async().await;
+    let product_id = Uuid::new_v4();
+    unsafe {
+        std::env::set_var("INVENTORY_SERVICE_URL", server.url());
     }
 
-    // reserve_stock produk tidak ditemukan (404) → NotFound
-    #[tokio::test]
-    async fn test_reserve_stock_produk_tidak_ditemukan() {
-        let server = MockServer::start().await;
-        let product_id = Uuid::new_v4();
-
-        Mock::given(method("POST"))
-            .and(path(format!(
-                "/internal/products/{}/stock/reserve",
-                product_id
-            )))
-            .respond_with(ResponseTemplate::new(404))
-            .mount(&server)
-            .await;
-
-        let order_id = Uuid::new_v4();
-        let uri = server.uri();
-        let result = temp_env::async_with_vars(
-            [
-                ("INVENTORY_SERVICE_URL", Some(uri.as_str())),
-                ("INTERNAL_SERVICE_KEY", Some("test-key")),
-            ],
-            async move { reserve_stock(product_id, order_id, 2).await },
+    server
+        .mock(
+            "POST",
+            format!("/products/internal/{}/stock/reserve", product_id).as_str(),
         )
+        .with_status(409)
+        .create_async()
         .await;
 
-        assert!(result.is_err());
-        match result.unwrap_err() {
-            crate::error::AppError::NotFound(_) => {}
-            e => panic!("Expected NotFound, got {:?}", e),
-        }
+    let result =
+        crate::services::inventory_client::reserve_stock(product_id, Uuid::new_v4(), 100).await;
+
+    assert!(matches!(result, Err(crate::error::AppError::Conflict(_))));
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn reserve_stock_gagal_produk_tidak_aktif_422() {
+    setup();
+    let mut server = Server::new_async().await;
+    let product_id = Uuid::new_v4();
+    unsafe {
+        std::env::set_var("INVENTORY_SERVICE_URL", server.url());
     }
 
-    // reserve_stock produk tidak ACTIVE (422) → UnprocessableEntity
-    #[tokio::test]
-    async fn test_reserve_stock_produk_tidak_active() {
-        let server = MockServer::start().await;
-        let product_id = Uuid::new_v4();
-
-        Mock::given(method("POST"))
-            .and(path(format!(
-                "/internal/products/{}/stock/reserve",
-                product_id
-            )))
-            .respond_with(ResponseTemplate::new(422))
-            .mount(&server)
-            .await;
-
-        let order_id = Uuid::new_v4();
-        let uri = server.uri();
-        let result = temp_env::async_with_vars(
-            [
-                ("INVENTORY_SERVICE_URL", Some(uri.as_str())),
-                ("INTERNAL_SERVICE_KEY", Some("test-key")),
-            ],
-            async move { reserve_stock(product_id, order_id, 2).await },
+    server
+        .mock(
+            "POST",
+            format!("/products/internal/{}/stock/reserve", product_id).as_str(),
         )
+        .with_status(422)
+        .create_async()
         .await;
 
-        assert!(result.is_err());
-        match result.unwrap_err() {
-            crate::error::AppError::UnprocessableEntity(_) => {}
-            e => panic!("Expected UnprocessableEntity, got {:?}", e),
-        }
+    let result =
+        crate::services::inventory_client::reserve_stock(product_id, Uuid::new_v4(), 1).await;
+
+    assert!(matches!(
+        result,
+        Err(crate::error::AppError::UnprocessableEntity(_))
+    ));
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn release_stock_sukses() {
+    setup();
+    let mut server = Server::new_async().await;
+    let product_id = Uuid::new_v4();
+    unsafe {
+        std::env::set_var("INVENTORY_SERVICE_URL", server.url());
     }
 
-    // release_stock berhasil (200)
-    #[tokio::test]
-    async fn test_release_stock_berhasil() {
-        let server = MockServer::start().await;
-        let product_id = Uuid::new_v4();
-
-        Mock::given(method("POST"))
-            .and(path(format!(
-                "/internal/products/{}/stock/release",
-                product_id
-            )))
-            .respond_with(ResponseTemplate::new(200))
-            .mount(&server)
-            .await;
-
-        let order_id = Uuid::new_v4();
-        let uri = server.uri();
-        let result = temp_env::async_with_vars(
-            [
-                ("INVENTORY_SERVICE_URL", Some(uri.as_str())),
-                ("INTERNAL_SERVICE_KEY", Some("test-key")),
-            ],
-            async move { release_stock(product_id, order_id, 2).await },
+    server
+        .mock(
+            "POST",
+            format!("/products/internal/{}/stock/release", product_id).as_str(),
         )
+        .with_status(200)
+        .create_async()
         .await;
 
-        assert!(result.is_ok());
+    let result =
+        crate::services::inventory_client::release_stock(product_id, Uuid::new_v4(), 1).await;
+
+    assert!(result.is_ok());
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn release_stock_gagal_produk_tidak_ditemukan_404() {
+    setup();
+    let mut server = Server::new_async().await;
+    let product_id = Uuid::new_v4();
+    unsafe {
+        std::env::set_var("INVENTORY_SERVICE_URL", server.url());
     }
 
-    // fetch_product berhasil (200) → return JSON data
-    #[tokio::test]
-    async fn test_fetch_product_berhasil() {
-        let server = MockServer::start().await;
-        let product_id = Uuid::new_v4();
-
-        Mock::given(method("GET"))
-            .and(path(format!("/products/{}", product_id)))
-            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                "data": {
-                    "id": product_id,
-                    "name": "Matcha Kit Kat",
-                    "price": 25000,
-                    "jastiperId": Uuid::new_v4(),
-                }
-            })))
-            .mount(&server)
-            .await;
-
-        let uri = server.uri();
-        let result = temp_env::async_with_vars(
-            [
-                ("INVENTORY_SERVICE_URL", Some(uri.as_str())),
-                ("INTERNAL_SERVICE_KEY", Some("test-key")),
-            ],
-            async move { fetch_product(product_id).await },
+    server
+        .mock(
+            "POST",
+            format!("/products/internal/{}/stock/release", product_id).as_str(),
         )
+        .with_status(404)
+        .create_async()
         .await;
 
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap()["name"], "Matcha Kit Kat");
+    let result =
+        crate::services::inventory_client::release_stock(product_id, Uuid::new_v4(), 1).await;
+
+    assert!(matches!(result, Err(crate::error::AppError::NotFound(_))));
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn fetch_product_sukses() {
+    setup();
+    let mut server = Server::new_async().await;
+    let product_id = Uuid::new_v4();
+    unsafe {
+        std::env::set_var("INVENTORY_SERVICE_URL", server.url());
     }
 
-    // fetch_product tidak ditemukan (404) → NotFound
-    #[tokio::test]
-    async fn test_fetch_product_tidak_ditemukan() {
-        let server = MockServer::start().await;
-        let product_id = Uuid::new_v4();
+    let product_data = json!({
+        "jastiperId": Uuid::new_v4(),
+        "name": "Snickers",
+        "price": 10_000_i64,
+        "service_fee": 1_000_i64,
+    });
 
-        Mock::given(method("GET"))
-            .and(path(format!("/products/{}", product_id)))
-            .respond_with(ResponseTemplate::new(404))
-            .mount(&server)
-            .await;
-
-        let uri = server.uri();
-        let result = temp_env::async_with_vars(
-            [
-                ("INVENTORY_SERVICE_URL", Some(uri.as_str())),
-                ("INTERNAL_SERVICE_KEY", Some("test-key")),
-            ],
-            async move { fetch_product(product_id).await },
-        )
+    server
+        .mock("GET", format!("/products/{}", product_id).as_str())
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(json!({ "data": product_data }).to_string())
+        .create_async()
         .await;
 
-        assert!(result.is_err());
-        match result.unwrap_err() {
-            crate::error::AppError::NotFound(_) => {}
-            e => panic!("Expected NotFound, got {:?}", e),
-        }
+    let result = crate::services::inventory_client::fetch_product(product_id).await;
+
+    assert!(result.is_ok());
+    assert_eq!(result.unwrap()["name"], "Snickers");
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn fetch_product_gagal_tidak_ditemukan_404() {
+    setup();
+    let mut server = Server::new_async().await;
+    let product_id = Uuid::new_v4();
+    unsafe {
+        std::env::set_var("INVENTORY_SERVICE_URL", server.url());
     }
 
-    // send_product_rating berhasil (200)
-    #[tokio::test]
-    async fn test_send_product_rating_berhasil() {
-        let server = MockServer::start().await;
-        let product_id = Uuid::new_v4();
-
-        Mock::given(method("POST"))
-            .and(path(format!(
-                "/internal/products/{}/post-order",
-                product_id
-            )))
-            .respond_with(ResponseTemplate::new(200))
-            .mount(&server)
-            .await;
-
-        let order_id = Uuid::new_v4();
-        let uri = server.uri();
-        let result =
-            temp_env::async_with_vars(
-                [
-                    ("INVENTORY_SERVICE_URL", Some(uri.as_str())),
-                    ("INTERNAL_SERVICE_KEY", Some("test-key")),
-                ],
-                async move {
-                    send_product_rating(product_id, order_id, 4.5, Some("Bagus"), vec![]).await
-                },
-            )
-            .await;
-
-        assert!(result.is_ok());
-    }
-
-    // send_product_rating non-fatal: 404 → Ok
-    #[tokio::test]
-    async fn test_send_product_rating_404_nonfatal() {
-        let server = MockServer::start().await;
-        let product_id = Uuid::new_v4();
-
-        Mock::given(method("POST"))
-            .and(path(format!(
-                "/internal/products/{}/post-order",
-                product_id
-            )))
-            .respond_with(ResponseTemplate::new(404))
-            .mount(&server)
-            .await;
-
-        let order_id = Uuid::new_v4();
-        let uri = server.uri();
-        let result = temp_env::async_with_vars(
-            [
-                ("INVENTORY_SERVICE_URL", Some(uri.as_str())),
-                ("INTERNAL_SERVICE_KEY", Some("test-key")),
-            ],
-            async move { send_product_rating(product_id, order_id, 4.5, None, vec![]).await },
-        )
+    server
+        .mock("GET", format!("/products/{}", product_id).as_str())
+        .with_status(404)
+        .create_async()
         .await;
 
-        assert!(result.is_ok()); // non-fatal
+    let result = crate::services::inventory_client::fetch_product(product_id).await;
+
+    assert!(matches!(result, Err(crate::error::AppError::NotFound(_))));
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn fetch_product_gagal_produk_tidak_aktif_422() {
+    setup();
+    let mut server = Server::new_async().await;
+    let product_id = Uuid::new_v4();
+    unsafe {
+        std::env::set_var("INVENTORY_SERVICE_URL", server.url());
     }
 
-    // send_product_rating idempotent (409) → Ok
-    #[tokio::test]
-    async fn test_send_product_rating_idempotent() {
-        let server = MockServer::start().await;
-        let product_id = Uuid::new_v4();
-
-        Mock::given(method("POST"))
-            .and(path(format!(
-                "/internal/products/{}/post-order",
-                product_id
-            )))
-            .respond_with(ResponseTemplate::new(409))
-            .mount(&server)
-            .await;
-
-        let order_id = Uuid::new_v4();
-        let uri = server.uri();
-        let result = temp_env::async_with_vars(
-            [
-                ("INVENTORY_SERVICE_URL", Some(uri.as_str())),
-                ("INTERNAL_SERVICE_KEY", Some("test-key")),
-            ],
-            async move { send_product_rating(product_id, order_id, 4.5, None, vec![]).await },
-        )
+    server
+        .mock("GET", format!("/products/{}", product_id).as_str())
+        .with_status(422)
+        .create_async()
         .await;
 
-        assert!(result.is_ok());
+    let result = crate::services::inventory_client::fetch_product(product_id).await;
+    println!("Result: {:?}", result);
+
+    assert!(matches!(
+        result,
+        Err(crate::error::AppError::UnprocessableEntity(_))
+    ));
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn fetch_product_gagal_unexpected_status_500() {
+    setup();
+    let mut server = Server::new_async().await;
+    let product_id = Uuid::new_v4();
+    unsafe {
+        std::env::set_var("INVENTORY_SERVICE_URL", server.url());
     }
+
+    server
+        .mock("GET", format!("/products/{}", product_id).as_str())
+        .with_status(500)
+        .create_async()
+        .await;
+
+    let result = crate::services::inventory_client::fetch_product(product_id).await;
+
+    assert!(matches!(result, Err(crate::error::AppError::Internal)));
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn send_product_rating_sukses() {
+    setup();
+    let mut server = Server::new_async().await;
+    let product_id = Uuid::new_v4();
+    unsafe {
+        std::env::set_var("INVENTORY_SERVICE_URL", server.url());
+    }
+
+    server
+        .mock(
+            "POST",
+            format!("/internal/products/{}/post-order", product_id).as_str(),
+        )
+        .with_status(200)
+        .create_async()
+        .await;
+
+    let result = crate::services::inventory_client::send_product_rating(
+        product_id,
+        Uuid::new_v4(),
+        4.5,
+        Some("Produk bagus"),
+        vec!["https://img.example.com/1.jpg"],
+    )
+    .await;
+
+    assert!(result.is_ok());
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn send_product_rating_produk_tidak_ditemukan_404_non_fatal() {
+    setup();
+    let mut server = Server::new_async().await;
+    let product_id = Uuid::new_v4();
+    unsafe {
+        std::env::set_var("INVENTORY_SERVICE_URL", server.url());
+    }
+
+    server
+        .mock(
+            "POST",
+            format!("/internal/products/{}/post-order", product_id).as_str(),
+        )
+        .with_status(404)
+        .create_async()
+        .await;
+
+    let result = crate::services::inventory_client::send_product_rating(
+        product_id,
+        Uuid::new_v4(),
+        4.0,
+        None,
+        vec![],
+    )
+    .await;
+
+    assert!(result.is_ok());
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn send_product_rating_idempotent_409() {
+    setup();
+    let mut server = Server::new_async().await;
+    let product_id = Uuid::new_v4();
+    unsafe {
+        std::env::set_var("INVENTORY_SERVICE_URL", server.url());
+    }
+
+    server
+        .mock(
+            "POST",
+            format!("/internal/products/{}/post-order", product_id).as_str(),
+        )
+        .with_status(409)
+        .create_async()
+        .await;
+
+    let result = crate::services::inventory_client::send_product_rating(
+        product_id,
+        Uuid::new_v4(),
+        5.0,
+        Some("Mantap"),
+        vec![],
+    )
+    .await;
+
+    assert!(result.is_ok());
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn send_product_rating_unexpected_status_tetap_ok() {
+    setup();
+    let mut server = Server::new_async().await;
+    let product_id = Uuid::new_v4();
+    unsafe {
+        std::env::set_var("INVENTORY_SERVICE_URL", server.url());
+    }
+
+    server
+        .mock(
+            "POST",
+            format!("/internal/products/{}/post-order", product_id).as_str(),
+        )
+        .with_status(503)
+        .create_async()
+        .await;
+
+    let result = crate::services::inventory_client::send_product_rating(
+        product_id,
+        Uuid::new_v4(),
+        3.0,
+        None,
+        vec![],
+    )
+    .await;
+
+    assert!(result.is_ok());
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn send_product_rating_tanpa_review_dan_images() {
+    setup();
+    let mut server = Server::new_async().await;
+    let product_id = Uuid::new_v4();
+    unsafe {
+        std::env::set_var("INVENTORY_SERVICE_URL", server.url());
+    }
+
+    server
+        .mock(
+            "POST",
+            format!("/internal/products/{}/post-order", product_id).as_str(),
+        )
+        .with_status(200)
+        .create_async()
+        .await;
+
+    let result = crate::services::inventory_client::send_product_rating(
+        product_id,
+        Uuid::new_v4(),
+        4.0,
+        None,
+        vec![],
+    )
+    .await;
+
+    assert!(result.is_ok());
 }
