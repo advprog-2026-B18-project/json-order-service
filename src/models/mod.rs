@@ -1,4 +1,10 @@
 #![allow(dead_code)]
+pub mod filter_pagination;
 pub mod order;
-mod order_status_history;
-mod rating;
+pub mod order_state;
+pub mod order_status_history;
+pub mod product_snapshot;
+pub mod rating_jastiper;
+pub mod rating_product;
+pub mod role;
+pub mod shipping_address;
