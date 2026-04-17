@@ -176,19 +176,19 @@ pub async fn update_status(
     debug!("📋 [update_order] current status={:?}", order.status);
 
     match (&req.status, &role) {
-        (OrderStatus::Purchased | OrderStatus::Shipped, Role::Jastiper) => {
-            if order.jastiper_id != requester_id {
-                return Err(AppError::Forbidden(
-                    "Hanya jastiper pemilik produk".to_string(),
-                ));
-            }
+        (OrderStatus::Purchased | OrderStatus::Shipped, Role::Jastiper)
+            if order.jastiper_id != requester_id =>
+        {
+            return Err(AppError::Forbidden(
+                "Hanya jastiper pemilik produk".to_string(),
+            ));
         }
-        (OrderStatus::Completed, Role::Titipers) => {
-            if order.titipers_id != requester_id {
-                return Err(AppError::Forbidden(
-                    "Hanya titipers pemilik order".to_string(),
-                ));
-            }
+        (OrderStatus::Completed, Role::Titipers)
+            if order.titipers_id != requester_id =>
+        {
+            return Err(AppError::Forbidden(
+                "Hanya titipers pemilik order".to_string(),
+            ));
         }
         _ => {}
     }
