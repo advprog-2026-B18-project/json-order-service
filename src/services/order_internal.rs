@@ -9,7 +9,7 @@ use crate::models::order::{
 use crate::models::order_status_history::OrderStatus;
 use crate::models::role::Role;
 use crate::repositories::order_impl::OrderRepository;
-use crate::services::order::update_status;
+use crate::services::order::{update_status};
 
 pub async fn get_order_internal(
     order_repo: &dyn OrderRepository,
@@ -86,7 +86,7 @@ pub async fn refund_confirmed(
         return Err(AppError::Conflict("Refund already confirmed".to_string()));
     }
 
-    if order.status != OrderStatus::Refunding || order.status != OrderStatus::RefundFailed {
+    if order.status != OrderStatus::Refunding && order.status != OrderStatus::RefundFailed {
         return Err(AppError::Conflict(format!(
             "Status harus REFUNDING/REFUNDFAILED, sekarang {:?}",
             order.status
@@ -121,11 +121,17 @@ pub async fn refund_confirmed(
         )
     };
 
+    let role = if order.status == OrderStatus::RefundFailed {
+        &Role::Admin
+    } else {
+        &Role::System
+    };
+
     let result = update_status(
         order_repo,
         order_id,
         Uuid::nil(),
-        &Role::System,
+        role,
         UpdateStatusRequest {
             status: target_status,
             notes: Option::from(notes),
@@ -134,7 +140,7 @@ pub async fn refund_confirmed(
             cancellation_reason: None,
         },
     )
-    .await?;
+        .await?;
 
     Ok(result)
 }

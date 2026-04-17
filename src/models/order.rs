@@ -34,7 +34,7 @@ pub enum OrderIden {
     UpdatedAt,
 }
 
-#[derive(Debug, Serialize, Deserialize, sqlx::FromRow, ToSchema)]
+#[derive(Debug, Serialize, Deserialize, sqlx::FromRow, ToSchema, Clone, Default)]
 pub struct Order {
     pub order_id: Uuid,
     pub titipers_id: Uuid,
@@ -105,4 +105,19 @@ pub struct RefundConfirmedRequest {
     pub wallet_transaction_id: Uuid,
     pub amount_refunded: i64,
     pub notes: Option<String>,
+}
+
+pub struct PriceBreakdown {
+    pub unit_price: i64,
+    pub service_fee: i64,
+    pub total_price: i64,
+}
+
+pub struct UpdateOrderParams<'a> {
+    pub changed_by: &'a str,
+    pub actor_role: &'a Role,
+    pub notes: Option<&'a str>,
+    pub tracking_number: Option<&'a str>,
+    pub courier: Option<&'a str>,
+    pub cancellation_reason: Option<&'a str>,
 }

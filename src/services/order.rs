@@ -5,7 +5,8 @@ use uuid::Uuid;
 use crate::error::AppError;
 use crate::models::filter_pagination::{OrderFilter, PaginationParams};
 use crate::models::order::{
-    CancelRequest, CreateOrderRequest, Order, ShippedRequest, UpdateStatusRequest,
+    CancelRequest, CreateOrderRequest, Order, PriceBreakdown, ShippedRequest, UpdateOrderParams,
+    UpdateStatusRequest,
 };
 use crate::models::order_state::OrderMachine;
 use crate::models::order_status_history::{OrderStatus, OrderStatusHistory};
@@ -87,9 +88,11 @@ pub async fn checkout(
             jastiper_id,
             req,
             snapshot,
-            unit_price,
-            service_fee,
-            total_price,
+            PriceBreakdown {
+                unit_price,
+                service_fee,
+                total_price,
+            },
         )
         .await
     {
@@ -210,12 +213,14 @@ pub async fn update_status(
         .update(
             order_id,
             &new_status,
-            &requester_id.to_string(),
-            role,
-            req.notes.as_deref(),
-            req.tracking_number.as_deref(),
-            req.courier.as_deref(),
-            req.cancellation_reason.as_deref(),
+            UpdateOrderParams {
+                changed_by: &requester_id.to_string(),
+                actor_role: role,
+                notes: req.notes.as_deref(),
+                tracking_number: req.tracking_number.as_deref(),
+                courier: req.courier.as_deref(),
+                cancellation_reason: req.cancellation_reason.as_deref(),
+            },
         )
         .await
         .map_err(|e| {
@@ -236,7 +241,7 @@ pub async fn cancel_status(
     order_id: Uuid,
     requester_id: Uuid,
     role: &Role,
-    req: UpdateStatusRequest,
+    req: UpdateStatusRequest,  // biarkan param ini untuk notes, cancellation_reason dll
 ) -> Result<Order, AppError> {
     let order = order_repo
         .find_by_id(order_id)
@@ -256,20 +261,22 @@ pub async fn cancel_status(
     let new_status = machine.cancel(role)?;
 
     debug!(
-        "📋 [cancel_status] current status={:?}",
-        &machine.current_status()
+        "📋 [cancel_status] new status={:?}",  // ← perbaiki debug
+        new_status
     );
 
     let result = order_repo
         .update(
             order_id,
-            &new_status,
-            &requester_id.to_string(),
-            &role,
-            req.notes.as_deref(),
-            req.tracking_number.as_deref(),
-            req.courier.as_deref(),
-            req.cancellation_reason.as_deref(),
+            &new_status,  // ← tetap pakai new_status
+            UpdateOrderParams {
+                changed_by: &requester_id.to_string(),
+                actor_role: role,
+                notes: req.notes.as_deref(),
+                tracking_number: req.tracking_number.as_deref(),
+                courier: req.courier.as_deref(),
+                cancellation_reason: req.cancellation_reason.as_deref(),
+            },
         )
         .await
         .map_err(|e| {
@@ -278,8 +285,8 @@ pub async fn cancel_status(
         })?;
 
     info!(
-        "✅ [update_status] order_id={} status updated to {:?}",
-        order_id, req.status
+        "✅ [cancel_status] order_id={} status updated to {:?}",  // ← ganti req.status jadi new_status
+        order_id, new_status
     );
     Ok(result)
 }

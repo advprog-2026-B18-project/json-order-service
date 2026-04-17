@@ -1,3 +1,4 @@
+mod adapters;
 pub mod controller;
 mod db;
 mod error;
@@ -9,15 +10,14 @@ pub mod services;
 mod state;
 #[cfg(test)]
 mod tests;
-mod adapters;
 
+use crate::adapters::auth_client_impl::HttpAuthClient;
+use crate::adapters::inventory_client_impl::HttpInventoryClient;
+use crate::adapters::wallet_client_impl::HttpWalletClient;
 use crate::repositories::order_impl::PgOrderRepository;
 use crate::repositories::order_status_history_impl::PgOrderStatusHistoryRepository;
 use crate::repositories::rating_jastiper_impl::PgRatingJastiperRepository;
 use crate::repositories::rating_product_impl::PgRatingProductRepository;
-use crate::adapters::auth_client_impl::HttpAuthClient;
-use crate::adapters::inventory_client_impl::HttpInventoryClient;
-use crate::adapters::wallet_client_impl::HttpWalletClient;
 use crate::state::AppState;
 use axum::Router;
 use axum::routing::{get, patch, post};

@@ -3,9 +3,8 @@ use serde_json::Value;
 use uuid::Uuid;
 
 use crate::models::filter_pagination::{OrderFilter, PaginationParams};
-use crate::models::order::{CreateOrderRequest, Order};
+use crate::models::order::{CreateOrderRequest, Order, PriceBreakdown, UpdateOrderParams};
 use crate::models::order_state::OrderStatus;
-use crate::models::role::Role;
 pub(crate) use crate::ports::order_repository::OrderRepository;
 use crate::repositories::order as order_repo;
 
@@ -40,9 +39,7 @@ impl OrderRepository for PgOrderRepository {
         jastiper_id: Uuid,
         req: CreateOrderRequest,
         product_snapshot: Value,
-        unit_price: i64,
-        service_fee: i64,
-        total_price: i64,
+        price: PriceBreakdown,
     ) -> crate::error::Result<Order> {
         order_repo::create(
             &self.pool,
@@ -50,9 +47,7 @@ impl OrderRepository for PgOrderRepository {
             jastiper_id,
             req,
             product_snapshot,
-            unit_price,
-            service_fee,
-            total_price,
+            price,
         )
         .await
     }
@@ -61,24 +56,8 @@ impl OrderRepository for PgOrderRepository {
         &self,
         order_id: Uuid,
         new_status: &OrderStatus,
-        changed_by: &str,
-        actor_role: &Role,
-        notes: Option<&'a str>,
-        tracking_number: Option<&'a str>,
-        courier: Option<&'a str>,
-        cancellation_reason: Option<&'a str>,
+        params: UpdateOrderParams<'a>,
     ) -> crate::error::Result<Order> {
-        order_repo::update(
-            &self.pool,
-            order_id,
-            new_status,
-            changed_by,
-            actor_role,
-            notes,
-            tracking_number,
-            courier,
-            cancellation_reason,
-        )
-        .await
+        order_repo::update(&self.pool, order_id, new_status, params).await
     }
 }

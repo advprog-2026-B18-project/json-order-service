@@ -5,8 +5,8 @@ use uuid::Uuid;
 use crate::error::Result;
 use crate::models::filter_pagination::{OrderFilter, PaginationParams};
 use crate::models::order::{CreateOrderRequest, Order};
+use crate::models::order::{PriceBreakdown, UpdateOrderParams};
 use crate::models::order_state::OrderStatus;
-use crate::models::role::Role;
 
 #[cfg_attr(test, mockall::automock)]
 #[async_trait]
@@ -25,20 +25,13 @@ pub trait OrderRepository: Send + Sync {
         jastiper_id: Uuid,
         req: CreateOrderRequest,
         product_snapshot: Value,
-        unit_price: i64,
-        service_fee: i64,
-        total_price: i64,
+        price: PriceBreakdown,
     ) -> Result<Order>;
 
     async fn update<'a>(
         &self,
         order_id: Uuid,
         new_status: &OrderStatus,
-        changed_by: &str,
-        actor_role: &Role,
-        notes: Option<&'a str>,
-        tracking_number: Option<&'a str>,
-        courier: Option<&'a str>,
-        cancellation_reason: Option<&'a str>,
+        params: UpdateOrderParams<'a>,
     ) -> Result<Order>;
 }

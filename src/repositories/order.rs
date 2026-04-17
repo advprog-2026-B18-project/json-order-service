@@ -8,6 +8,7 @@ use uuid::Uuid;
 use crate::error::{AppError, Result};
 use crate::models::filter_pagination::{OrderFilter, PaginationParams, SortOrder};
 pub(crate) use crate::models::order::{CreateOrderRequest, Order, OrderIden};
+use crate::models::order::{PriceBreakdown, UpdateOrderParams};
 use crate::models::order_state::OrderStatus;
 use crate::models::role::Role;
 use crate::repositories::order_status_history::insert_status_history;
@@ -151,9 +152,7 @@ pub async fn create(
     jastiper_id: Uuid,
     req: CreateOrderRequest,
     product_snapshot: serde_json::Value,
-    unit_price: i64,
-    service_fee: i64,
-    total_price: i64,
+    price: PriceBreakdown,
 ) -> Result<Order> {
     let order_id = Uuid::new_v4();
     let now = Utc::now();
@@ -183,9 +182,9 @@ pub async fn create(
             req.product_id.into(),
             product_snapshot.into(),
             req.quantity.into(),
-            unit_price.into(),
-            service_fee.into(),
-            total_price.into(),
+            price.unit_price.into(),
+            price.service_fee.into(),
+            price.total_price.into(),
             OrderStatus::Pending.to_string().into(),
             serde_json::to_value(req.shipping_address).unwrap().into(),
             req.note_to_jastiper.unwrap_or_default().into(),
@@ -213,12 +212,7 @@ pub async fn update(
     pool: &PgPool,
     order_id: Uuid,
     new_status: &OrderStatus,
-    changed_by: &str,
-    actor_role: &Role,
-    notes: Option<&str>,
-    tracking_number: Option<&str>,
-    courier: Option<&str>,
-    cancellation_reason: Option<&str>,
+    params: UpdateOrderParams<'_>,
 ) -> Result<Order> {
     let now = Utc::now();
 
@@ -232,20 +226,28 @@ pub async fn update(
     if *new_status == OrderStatus::Completed {
         query.value(OrderIden::CompletedAt, now);
     }
-    if let Some(tn) = tracking_number {
+    if let Some(tn) = params.tracking_number {
         query.value(OrderIden::TrackingNumber, tn);
     }
-    if let Some(c) = courier {
+    if let Some(c) = params.courier {
         query.value(OrderIden::Courier, c);
     }
-    if let Some(cr) = cancellation_reason {
+    if let Some(cr) = params.cancellation_reason {
         query.value(OrderIden::CancellationReason, cr);
     }
 
     let (sql, values) = query.build_sqlx(PostgresQueryBuilder);
     sqlx::query_with(&sql, values).execute(pool).await?;
 
-    insert_status_history(pool, order_id, new_status, changed_by, actor_role, notes).await?;
+    insert_status_history(
+        pool,
+        order_id,
+        new_status,
+        params.changed_by,
+        params.actor_role,
+        params.notes,
+    )
+    .await?;
 
     find_by_id(pool, order_id).await?.ok_or(AppError::Internal)
 }
