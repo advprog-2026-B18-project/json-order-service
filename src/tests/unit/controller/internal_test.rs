@@ -1,199 +1,122 @@
-#[cfg(test)]
-mod tests {
-    use axum::http::{HeaderMap, HeaderName, HeaderValue};
-    use serde_json::json;
-    use uuid::Uuid;
+use axum::http::StatusCode;
+use serde_json::json;
+use std::sync::Arc;
+use uuid::Uuid;
 
-    fn headers_with_key(key: &str) -> HeaderMap {
-        let mut h = HeaderMap::new();
-        h.insert(
-            HeaderName::from_bytes(b"X-Service-Key").unwrap(),
-            HeaderValue::from_str(key).unwrap(),
-        );
-        h
+use crate::models::order::{Order, OrderStatus};
+use crate::ports::auth_client::MockAuthClient;
+use crate::ports::inventory_client::MockInventoryClient;
+use crate::ports::order_repository::MockOrderRepository;
+use crate::ports::order_status_history_repository::MockOrderStatusHistoryRepository;
+use crate::ports::rating_jastiper_repository::MockRatingJastiperRepository;
+use crate::ports::rating_product_repository::MockRatingProductRepository;
+use crate::ports::wallet_client::MockWalletClient;
+use crate::state::AppState;
+use crate::tests::unit::controller::helper_test::{
+    TestApp, json_request_internal, json_request_internal_post,
+};
+
+pub fn setup_jwt_secret() {
+    unsafe {
+        std::env::set_var("JWT_SECRET", "dGVzdC1zZWNyZXQtdGVzdC1zZWNyZXQ=");
     }
+}
 
-    #[test]
-    fn test_payment_info_requires_service_key() {
-        temp_env::with_vars([("INTERNAL_SERVICE_KEY", Some("valid-key"))], || {
-            let result = crate::middleware::security_config::validate_service_key(
-                &headers_with_key("wrong-key"),
-            );
-            assert!(
-                result.is_err(),
-                "payment_info harus menolak request dengan key salah"
-            );
-        });
+pub fn setup_service_key() {
+    unsafe {
+        std::env::set_var("SERVICE_KEY", "valid-service-key-123");
     }
+}
 
-    #[test]
-    fn test_payment_confirmed_requires_service_key() {
-        temp_env::with_vars([("INTERNAL_SERVICE_KEY", Some("svc-secret"))], || {
-            let result = crate::middleware::security_config::validate_service_key(
-                &headers_with_key("not-svc-secret"),
-            );
-            assert!(result.is_err());
-        });
+fn make_order(order_id: Uuid, titipers_id: Uuid, jastiper_id: Uuid, status: OrderStatus) -> Order {
+    Order {
+        order_id,
+        titipers_id,
+        jastiper_id,
+        product_id: Uuid::new_v4(),
+        product_snapshot: json!({}),
+        quantity: 1,
+        unit_price: 10_000,
+        service_fee: 1_000,
+        total_price: 11_000,
+        status,
+        shipping_address: json!({}),
+        note_to_jastiper: None,
+        tracking_number: None,
+        courier: None,
+        cancellation_reason: None,
+        cancelled_by: None,
+        completed_at: None,
+        created_at: chrono::Utc::now(),
+        updated_at: chrono::Utc::now(),
     }
+}
 
-    #[test]
-    fn test_refund_confirmed_requires_service_key() {
-        temp_env::with_vars([("INTERNAL_SERVICE_KEY", Some("refund-key"))], || {
-            let result = crate::middleware::security_config::validate_service_key(
-                &headers_with_key("bad-key"),
-            );
-            assert!(result.is_err());
-        });
-    }
+#[tokio::test]
+async fn payment_info_gagal_service_key_invalid_401() {
+    setup_jwt_secret();
+    setup_service_key();
 
-    #[test]
-    fn test_valid_service_key_passes_all_internal_routes() {
-        temp_env::with_vars(
-            [("INTERNAL_SERVICE_KEY", Some("shared-internal-secret"))],
-            || {
-                let headers = headers_with_key("shared-internal-secret");
-                let r1 = crate::middleware::security_config::validate_service_key(&headers);
-                let r2 = crate::middleware::security_config::validate_service_key(&headers);
-                let r3 = crate::middleware::security_config::validate_service_key(&headers);
+    let order_id = Uuid::new_v4();
 
-                assert!(r1.is_ok(), "payment_info: key valid harus diterima");
-                assert!(r2.is_ok(), "payment_confirmed: key valid harus diterima");
-                assert!(r3.is_ok(), "refund_confirmed: key valid harus diterima");
-            },
-        );
-    }
+    let app = TestApp::new(AppState {
+        order_repo: Arc::new(MockOrderRepository::new()),
+        inventory_client: Arc::new(MockInventoryClient::new()),
+        wallet_client: Arc::new(MockWalletClient::new()),
+        order_status_history_repo: Arc::new(MockOrderStatusHistoryRepository::new()),
+        rating_product_repo: Arc::new(MockRatingProductRepository::new()),
+        rating_jastiper_repo: Arc::new(MockRatingJastiperRepository::new()),
+        auth_client: Arc::new(MockAuthClient::new()),
+    });
 
-    #[test]
-    fn test_payment_info_response_shape() {
-        let order_id = Uuid::new_v4();
-        let user_id = Uuid::new_v4();
-        let jastiper_id = Uuid::new_v4();
+    let req = json_request_internal(
+        "GET",
+        &format!("/internal/orders/{}/payment-info", order_id),
+        "invalid-key",
+    );
 
-        let resp = json!({
+    let (status, _) = app.send(req).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn refund_confirmed_gagal_amount_mismatch_422() {
+    setup_jwt_secret();
+    setup_service_key();
+
+    let order_id = Uuid::new_v4();
+    let mut repo = MockOrderRepository::new();
+
+    let refunding = make_order(
+        order_id,
+        Uuid::new_v4(),
+        Uuid::new_v4(),
+        OrderStatus::Refunding,
+    );
+
+    repo.expect_find_by_id()
+        .returning(move |_| Ok(Some(refunding.clone())));
+
+    let app = TestApp::new(AppState {
+        order_repo: Arc::new(repo),
+        inventory_client: Arc::new(MockInventoryClient::new()),
+        wallet_client: Arc::new(MockWalletClient::new()),
+        order_status_history_repo: Arc::new(MockOrderStatusHistoryRepository::new()),
+        rating_product_repo: Arc::new(MockRatingProductRepository::new()),
+        rating_jastiper_repo: Arc::new(MockRatingJastiperRepository::new()),
+        auth_client: Arc::new(MockAuthClient::new()),
+    });
+
+    let req = json_request_internal_post(
+        &format!("/internal/orders/{}/refund-confirmed", order_id),
+        "super-secret-internal-key-2026",
+        Some(json!({
             "success": true,
-            "message": "OK",
-            "data": {
-                "order_id":          order_id,
-                "titipers_user_id":  user_id,
-                "jastiper_user_id":  jastiper_id,
-                "total_price":       150000,
-                "status":            "pending",
-                "product_snapshot":  {}
-            }
-        });
+            "amount_refunded": 9999,
+        })),
+    );
 
-        assert_eq!(resp["success"], true);
-        assert_eq!(resp["message"], "OK");
+    let (status, _) = app.send(req).await;
 
-        let data = &resp["data"];
-        assert!(data["order_id"].is_string());
-        assert!(data["titipers_user_id"].is_string());
-        assert!(data["jastiper_user_id"].is_string());
-        assert!(data["total_price"].is_number());
-        assert!(data["status"].is_string());
-        assert!(!data["product_snapshot"].is_null());
-    }
-
-    #[test]
-    fn test_payment_info_uses_titipers_not_titiper() {
-        let resp = json!({
-            "data": {
-                "titipers_user_id": Uuid::new_v4(),
-            }
-        });
-
-        assert!(
-            resp["data"]["titipers_user_id"].is_string(),
-            "Field harus 'titipers_user_id'"
-        );
-        assert!(
-            resp["data"]["titiper_user_id"].is_null(),
-            "'titiper_user_id' tidak boleh ada (typo)"
-        );
-    }
-
-    #[test]
-    fn test_payment_confirmed_response_shape() {
-        let order_id = Uuid::new_v4();
-
-        let resp = json!({
-            "success": true,
-            "message": "Status order diperbarui ke PAID",
-            "data": {
-                "order_id": order_id,
-                "status":   "paid"
-            }
-        });
-
-        assert_eq!(resp["success"], true);
-        assert_eq!(resp["message"], "Status order diperbarui ke PAID");
-        assert!(resp["data"]["order_id"].is_string());
-        assert_eq!(resp["data"]["status"], "paid");
-    }
-
-    #[test]
-    fn test_payment_confirmed_message_contains_paid() {
-        let msg = "Status order diperbarui ke PAID";
-        assert!(msg.contains("PAID"), "Pesan harus menyebut status PAID");
-    }
-
-    #[test]
-    fn test_refund_confirmed_response_shape() {
-        let order_id = Uuid::new_v4();
-
-        let resp = json!({
-            "success": true,
-            "message": "Refund terkonfirmasi",
-            "data": {
-                "order_id":         order_id,
-                "status":           "refunded",
-                "refund_confirmed": true
-            }
-        });
-
-        assert_eq!(resp["success"], true);
-        assert_eq!(resp["message"], "Refund terkonfirmasi");
-        assert!(resp["data"]["order_id"].is_string());
-        assert_eq!(resp["data"]["refund_confirmed"], true);
-    }
-
-    #[test]
-    fn test_refund_confirmed_always_sets_refund_confirmed_true() {
-        let resp = json!({
-            "data": {
-                "refund_confirmed": true
-            }
-        });
-
-        assert_eq!(
-            resp["data"]["refund_confirmed"], true,
-            "refund_confirmed harus true"
-        );
-    }
-
-    #[test]
-    fn test_payment_info_includes_product_snapshot() {
-        let payment_info_resp = json!({
-            "data": { "product_snapshot": { "name": "Produk X" } }
-        });
-
-        let payment_confirmed_resp = json!({
-            "data": { "order_id": Uuid::new_v4(), "status": "paid" }
-        });
-
-        assert!(!payment_info_resp["data"]["product_snapshot"].is_null());
-        assert!(
-            payment_confirmed_resp["data"]["product_snapshot"].is_null(),
-            "payment_confirmed tidak boleh mengembalikan product_snapshot"
-        );
-    }
-
-    #[test]
-    fn test_internal_endpoints_do_not_use_jwt_claims() {
-        let uses_jwt = false;
-        assert!(
-            !uses_jwt,
-            "Endpoint internal tidak boleh bergantung pada JWT"
-        );
-    }
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
 }

@@ -4,11 +4,11 @@ mod tests {
     use sqlx::PgPool;
     use uuid::Uuid;
 
-    use crate::models::order::{CreateOrderRequest, ShippingAddress};
+    use crate::models::order::{CreateOrderRequest, PriceBreakdown, ShippingAddress};
     use crate::models::rating_product::CreateRatingProductRequest;
     use crate::repositories::{order, rating_product};
 
-    async fn create_dummy_order(pool: &PgPool) -> (Uuid, crate::models::order::Order) {
+    async fn create_dummy_order(pool: &PgPool) -> (Uuid, order::Order) {
         let titipers_id = Uuid::new_v4();
 
         let req = CreateOrderRequest {
@@ -34,9 +34,11 @@ mod tests {
             Uuid::new_v4(),
             req,
             serde_json::json!({"name": "Produk Test"}),
-            20_000,
-            2_000,
-            22_000,
+            PriceBreakdown {
+                unit_price: 20_000,
+                service_fee: 2_000,
+                total_price: 22_000,
+            },
         )
         .await
         .expect("Gagal membuat dummy order");

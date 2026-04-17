@@ -7,10 +7,11 @@ use std::str::FromStr;
 use utoipa::ToSchema;
 
 // ENUM UNTUK STATE
-#[derive(Debug, Serialize, Deserialize, sqlx::Type, Clone, PartialEq, ToSchema)]
+#[derive(Debug, Serialize, Deserialize, sqlx::Type, Clone, PartialEq, ToSchema, Default)]
 #[sqlx(type_name = "TEXT", rename_all = "SCREAMING_SNAKE_CASE")]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum OrderStatus {
+    #[default]
     Pending,
     Paid,
     Purchased,

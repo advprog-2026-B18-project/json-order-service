@@ -1,4 +1,3 @@
-use sqlx::PgPool;
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 use validator::Validate;
@@ -6,12 +5,13 @@ use validator::Validate;
 use crate::error::AppError;
 use crate::models::order_status_history::OrderStatus;
 use crate::models::rating_product::{CreateRatingProductRequest, RatingProduct};
-use crate::repositories::order as order_repo;
-use crate::repositories::rating_product as rating_product_repo;
+use crate::ports::order_repository::OrderRepository;
+use crate::ports::rating_product_repository::RatingProductRepository;
 use crate::services::inventory_client::send_product_rating;
 
 pub async fn submit_rating(
-    pool: &PgPool,
+    order_repo: &dyn OrderRepository,
+    rating_product_repo: &dyn RatingProductRepository,
     order_id: Uuid,
     titipers_id: Uuid,
     req: CreateRatingProductRequest,
@@ -26,7 +26,8 @@ pub async fn submit_rating(
         AppError::Validation(e.to_string())
     })?;
 
-    let order = order_repo::find_by_id(pool, order_id)
+    let order = order_repo
+        .find_by_id(order_id)
         .await
         .map_err(|e| {
             error!("❌ [submit_rating_product] DB error: {:?}", e);
@@ -57,7 +58,8 @@ pub async fn submit_rating(
         ));
     }
 
-    if rating_product_repo::find_by_order_id(pool, order_id)
+    if rating_product_repo
+        .find_by_order_id(order_id)
         .await?
         .is_some()
     {
@@ -71,7 +73,8 @@ pub async fn submit_rating(
     }
 
     debug!("💾 [submit_rating_product] saving rating to DB");
-    let rating = rating_product_repo::create(pool, order_id, titipers_id, &req)
+    let rating = rating_product_repo
+        .create(order_id, titipers_id, &req)
         .await
         .map_err(|e| {
             error!("❌ [submit_rating_product] repo::create gagal: {:?}", e);
@@ -113,7 +116,8 @@ pub async fn submit_rating(
 }
 
 pub async fn get_rating(
-    pool: &PgPool,
+    order_repo: &dyn OrderRepository,
+    rating_product_repo: &dyn RatingProductRepository,
     order_id: Uuid,
     requester_id: Uuid,
 ) -> Result<RatingProduct, AppError> {
@@ -122,7 +126,8 @@ pub async fn get_rating(
         order_id, requester_id
     );
 
-    let order = order_repo::find_by_id(pool, order_id)
+    let order = order_repo
+        .find_by_id(order_id)
         .await?
         .ok_or_else(|| AppError::NotFound("Pesanan tidak ditemukan".to_string()))?;
 
@@ -136,7 +141,8 @@ pub async fn get_rating(
         ));
     }
 
-    rating_product_repo::find_by_order_id(pool, order_id)
+    rating_product_repo
+        .find_by_order_id(order_id)
         .await?
         .ok_or_else(|| {
             warn!(

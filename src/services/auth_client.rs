@@ -22,7 +22,6 @@ pub(crate) async fn send_jastiper_rating(
     let payload = json!({
         "order_id": order_id,
         "rating":   rating,
-        "review":   review,
     });
 
     debug!("👤 [user] send_jastiper_rating → POST {}", url);

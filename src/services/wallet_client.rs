@@ -35,12 +35,6 @@ async fn manage_wallet(
         "description": description,
     });
 
-    debug!("💳 [wallet] {} → POST {}", endpoint, url);
-    debug!(
-        "💳 [wallet] payload: user_id={} order_id={} amount={} desc='{}'",
-        user_id, order_id, amount, description
-    );
-
     let status = crate::services::http_client::internal_post(&url, body).await?;
 
     match (action, status) {

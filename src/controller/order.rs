@@ -4,7 +4,6 @@ use axum::{
 };
 use reqwest::StatusCode;
 use serde_json::json;
-use sqlx::PgPool;
 use std::sync::Arc;
 use uuid::Uuid;
 use validator::Validate;
@@ -14,6 +13,7 @@ use crate::middleware::auth::JwtClaims;
 use crate::models::filter_pagination::PaginationParams;
 use crate::models::order::{CancelRequest, CreateOrderRequest, ShippedRequest};
 use crate::services::order as svc;
+use crate::state::AppState;
 
 pub fn paginated_response(
     message: &str,
@@ -37,57 +37,72 @@ pub fn paginated_response(
 
 // POST /orders
 pub async fn checkout(
-    State(pool): State<Arc<PgPool>>,
+    State(state): State<Arc<AppState>>,
     claims: JwtClaims,
     Json(req): Json<CreateOrderRequest>,
 ) -> Result<(StatusCode, Json<serde_json::Value>), AppError> {
-    req.validate()
-        .map_err(|e| AppError::Validation(e.to_string()))?;
-
-    let order = svc::checkout(&pool, claims.user_id()?, req).await?;
+    let order = svc::checkout(
+        state.order_repo.as_ref(),
+        state.inventory_client.as_ref(),
+        state.wallet_client.as_ref(),
+        claims.user_id()?,
+        req,
+    )
+    .await?;
 
     Ok((
         StatusCode::CREATED,
-        Json(json!({ "success": true,
-            "message": "Pesanan berhasil dibuat", "data": order })),
+        Json(json!({
+            "success": true,
+            "message": "Pesanan berhasil dibuat",
+            "data": order,
+        })),
     ))
 }
 
 // GET /orders/{order_id}
 pub async fn get_order(
-    State(pool): State<Arc<PgPool>>,
+    State(state): State<Arc<AppState>>,
     claims: JwtClaims,
     Path(order_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let order = svc::get_order(&pool, order_id, claims.user_id()?).await?;
+    let order = svc::get_order(state.order_repo.as_ref(), order_id, claims.user_id()?).await?;
 
-    Ok(Json(
-        json!({ "success": true, "message": "OK", "data": order }),
-    ))
+    Ok(Json(json!({
+        "success": true,
+        "message": "OK",
+        "data": order,
+    })))
 }
 
 // PATCH /orders/{order_id}/payment
 pub async fn payment(
-    State(pool): State<Arc<PgPool>>,
+    State(state): State<Arc<AppState>>,
     claims: JwtClaims,
     Path(order_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let order_paid = svc::payment(&pool, claims.user_id()?, order_id).await?;
+    let order = svc::payment(
+        state.order_repo.as_ref(),
+        state.wallet_client.as_ref(),
+        claims.user_id()?,
+        order_id,
+    )
+    .await?;
 
     Ok(Json(json!({
         "success": true,
         "message": "Pembayaran berhasil dilakukan",
-        "data": order_paid
+        "data": order,
     })))
 }
 
 // PATCH /orders/{order_id}/confirm
 pub async fn confirm_order(
-    State(pool): State<Arc<PgPool>>,
+    State(state): State<Arc<AppState>>,
     claims: JwtClaims,
     Path(order_id): Path<Uuid>,
 ) -> Result<(StatusCode, Json<serde_json::Value>), AppError> {
-    let order = svc::confirm_order(&pool, order_id, claims.user_id()?).await?;
+    let order = svc::confirm_order(state.order_repo.as_ref(), claims.user_id()?, order_id).await?;
 
     Ok((
         StatusCode::OK,
@@ -105,11 +120,11 @@ pub async fn confirm_order(
 
 // PATCH /orders/{order_id}/purchased
 pub async fn purchased(
-    State(pool): State<Arc<PgPool>>,
+    State(state): State<Arc<AppState>>,
     claims: JwtClaims,
     Path(order_id): Path<Uuid>,
 ) -> Result<(StatusCode, Json<serde_json::Value>), AppError> {
-    let order = svc::purchased(&pool, order_id, claims.user_id()?).await?;
+    let order = svc::purchased(state.order_repo.as_ref(), order_id, claims.user_id()?).await?;
 
     Ok((
         StatusCode::OK,
@@ -127,12 +142,12 @@ pub async fn purchased(
 
 // PATCH /orders/{order_id}/shipped
 pub async fn shipped(
-    State(pool): State<Arc<PgPool>>,
+    State(state): State<Arc<AppState>>,
     claims: JwtClaims,
     Path(order_id): Path<Uuid>,
     Json(req): Json<ShippedRequest>,
 ) -> Result<(StatusCode, Json<serde_json::Value>), AppError> {
-    let order = svc::shipped(&pool, order_id, claims.user_id()?, req).await?;
+    let order = svc::shipped(state.order_repo.as_ref(), order_id, claims.user_id()?, req).await?;
 
     Ok((
         StatusCode::OK,
@@ -140,9 +155,11 @@ pub async fn shipped(
             "success": true,
             "message": "Pesanan berhasil dikirim jastiper",
             "data": {
-                "order_id":     order.order_id,
-                "status":       order.status,
-                "completed_at": order.updated_at,
+                "order_id":        order.order_id,
+                "status":          order.status,
+                "tracking_number": order.tracking_number,
+                "courier":         order.courier,
+                "updated_at":      order.updated_at,
             }
         })),
     ))
@@ -150,22 +167,28 @@ pub async fn shipped(
 
 // GET /orders/{order_id}/history
 pub async fn get_order_history(
-    State(pool): State<Arc<PgPool>>,
+    State(state): State<Arc<AppState>>,
     claims: JwtClaims,
     Path(order_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let history = svc::get_order_history(&pool, order_id, claims.user_id()?).await?;
+    let history = svc::get_order_history(
+        state.order_repo.as_ref(),
+        state.order_status_history_repo.as_ref(),
+        order_id,
+        claims.user_id()?,
+    )
+    .await?;
 
     Ok(Json(json!({
         "success": true,
         "message": "Riwayat ditemukan",
-        "data": history
+        "data": history,
     })))
 }
 
 // POST /orders/{order_id}/cancel
 pub async fn cancel_order(
-    State(pool): State<Arc<PgPool>>,
+    State(state): State<Arc<AppState>>,
     claims: JwtClaims,
     Path(order_id): Path<Uuid>,
     Json(req): Json<CancelRequest>,
@@ -173,26 +196,35 @@ pub async fn cancel_order(
     req.validate()
         .map_err(|e| AppError::Validation(e.to_string()))?;
 
-    let updated =
-        svc::cancel_order(&pool, order_id, claims.user_id()?, &claims.role()?, req).await?;
+    let order = svc::cancel_order(
+        state.order_repo.as_ref(),
+        state.inventory_client.as_ref(),
+        state.wallet_client.as_ref(),
+        order_id,
+        claims.user_id()?,
+        &claims.role()?,
+        req,
+    )
+    .await?;
 
     Ok(Json(json!({
         "success": true,
         "message": "Pesanan berhasil dibatalkan",
-        "data": updated
+        "data": order,
     })))
 }
 
 // GET /orders/my/purchases
 pub async fn my_purchases(
-    State(pool): State<Arc<PgPool>>,
+    State(state): State<Arc<AppState>>,
     claims: JwtClaims,
     Query(params): Query<PaginationParams>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let page = params.page;
     let limit = params.limit;
 
-    let (orders, total) = svc::my_purchases(&pool, claims.user_id()?, params).await?;
+    let (orders, total) =
+        svc::my_purchases(state.order_repo.as_ref(), claims.user_id()?, params).await?;
 
     Ok(Json(paginated_response(
         "Riwayat belanja ditemukan",
@@ -205,14 +237,15 @@ pub async fn my_purchases(
 
 // GET /orders/my/sales
 pub async fn my_sales(
-    State(pool): State<Arc<PgPool>>,
+    State(state): State<Arc<AppState>>,
     claims: JwtClaims,
     Query(params): Query<PaginationParams>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let page = params.page;
     let limit = params.limit;
 
-    let (orders, total) = svc::my_sales(&pool, claims.user_id()?, params).await?;
+    let (orders, total) =
+        svc::my_sales(state.order_repo.as_ref(), claims.user_id()?, params).await?;
 
     Ok(Json(paginated_response(
         "Daftar pesanan masuk ditemukan",

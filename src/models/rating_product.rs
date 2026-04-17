@@ -18,7 +18,7 @@ pub enum RatingProductIden {
     CreatedAt,
 }
 
-#[derive(Debug, Serialize, Deserialize, sqlx::FromRow, ToSchema)]
+#[derive(Debug, Serialize, Deserialize, sqlx::FromRow, ToSchema, Clone)]
 pub struct RatingProduct {
     pub rating_product_id: Uuid,
     pub order_id: Uuid,

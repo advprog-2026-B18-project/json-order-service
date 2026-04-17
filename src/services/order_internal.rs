@@ -1,4 +1,3 @@
-use sqlx::PgPool;
 use tracing::info;
 use tracing::log::warn;
 use uuid::Uuid;
@@ -9,21 +8,26 @@ use crate::models::order::{
 };
 use crate::models::order_status_history::OrderStatus;
 use crate::models::role::Role;
-use crate::repositories::order as order_repo;
+use crate::repositories::order_impl::OrderRepository;
 use crate::services::order::update_status;
 
-pub async fn get_order_internal(pool: &PgPool, order_id: Uuid) -> Result<Order, AppError> {
-    order_repo::find_by_id(pool, order_id)
+pub async fn get_order_internal(
+    order_repo: &dyn OrderRepository,
+    order_id: Uuid,
+) -> Result<Order, AppError> {
+    order_repo
+        .find_by_id(order_id)
         .await?
         .ok_or_else(|| AppError::NotFound("Pesanan tidak ditemukan".to_string()))
 }
 
 pub async fn payment_confirmed(
-    pool: &PgPool,
+    order_repo: &dyn OrderRepository,
     order_id: Uuid,
     req: PaymentConfirmedRequest,
 ) -> Result<Order, AppError> {
-    let order = order_repo::find_by_id(pool, order_id)
+    let order = order_repo
+        .find_by_id(order_id)
         .await?
         .ok_or_else(|| AppError::NotFound("Pesanan tidak ditemukan".to_string()))?;
 
@@ -51,7 +55,7 @@ pub async fn payment_confirmed(
     );
 
     let result = update_status(
-        pool,
+        order_repo,
         order_id,
         Uuid::nil(),
         &Role::System,
@@ -69,11 +73,12 @@ pub async fn payment_confirmed(
 }
 
 pub async fn refund_confirmed(
-    pool: &PgPool,
+    order_repo: &dyn OrderRepository,
     order_id: Uuid,
     req: RefundConfirmedRequest,
 ) -> Result<Order, AppError> {
-    let order = order_repo::find_by_id(pool, order_id)
+    let order = order_repo
+        .find_by_id(order_id)
         .await?
         .ok_or_else(|| AppError::NotFound("Pesanan tidak ditemukan".to_string()))?;
 
@@ -81,7 +86,7 @@ pub async fn refund_confirmed(
         return Err(AppError::Conflict("Refund already confirmed".to_string()));
     }
 
-    if order.status != OrderStatus::Refunding || order.status != OrderStatus::RefundFailed {
+    if order.status != OrderStatus::Refunding && order.status != OrderStatus::RefundFailed {
         return Err(AppError::Conflict(format!(
             "Status harus REFUNDING/REFUNDFAILED, sekarang {:?}",
             order.status
@@ -116,11 +121,17 @@ pub async fn refund_confirmed(
         )
     };
 
+    let role = &Role::System;
+    println!(
+        "🔍 [refund_confirmed] BEFORE update_status → order_id={}, current_status={:?}, target_status={:?}, role={:?}",
+        order_id, order.status, target_status, role
+    );
+
     let result = update_status(
-        pool,
+        order_repo,
         order_id,
         Uuid::nil(),
-        &Role::System,
+        role,
         UpdateStatusRequest {
             status: target_status,
             notes: Option::from(notes),
