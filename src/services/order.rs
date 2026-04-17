@@ -241,7 +241,7 @@ pub async fn cancel_status(
     order_id: Uuid,
     requester_id: Uuid,
     role: &Role,
-    req: UpdateStatusRequest,  // biarkan param ini untuk notes, cancellation_reason dll
+    req: UpdateStatusRequest, // biarkan param ini untuk notes, cancellation_reason dll
 ) -> Result<Order, AppError> {
     let order = order_repo
         .find_by_id(order_id)
@@ -261,14 +261,14 @@ pub async fn cancel_status(
     let new_status = machine.cancel(role)?;
 
     debug!(
-        "📋 [cancel_status] new status={:?}",  // ← perbaiki debug
+        "📋 [cancel_status] new status={:?}", // ← perbaiki debug
         new_status
     );
 
     let result = order_repo
         .update(
             order_id,
-            &new_status,  // ← tetap pakai new_status
+            &new_status, // ← tetap pakai new_status
             UpdateOrderParams {
                 changed_by: &requester_id.to_string(),
                 actor_role: role,
@@ -285,7 +285,7 @@ pub async fn cancel_status(
         })?;
 
     info!(
-        "✅ [cancel_status] order_id={} status updated to {:?}",  // ← ganti req.status jadi new_status
+        "✅ [cancel_status] order_id={} status updated to {:?}", // ← ganti req.status jadi new_status
         order_id, new_status
     );
     Ok(result)

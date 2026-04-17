@@ -9,7 +9,7 @@ use crate::models::order::{
 use crate::models::order_status_history::OrderStatus;
 use crate::models::role::Role;
 use crate::repositories::order_impl::OrderRepository;
-use crate::services::order::{update_status};
+use crate::services::order::update_status;
 
 pub async fn get_order_internal(
     order_repo: &dyn OrderRepository,
@@ -140,7 +140,7 @@ pub async fn refund_confirmed(
             cancellation_reason: None,
         },
     )
-        .await?;
+    .await?;
 
     Ok(result)
 }

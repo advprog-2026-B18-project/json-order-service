@@ -1,4 +1,4 @@
-use crate::models::order_state::OrderStatus;
+pub(crate) use crate::models::order_state::OrderStatus;
 use crate::models::role::Role;
 pub(crate) use crate::models::shipping_address::ShippingAddress;
 use chrono::{DateTime, Utc};

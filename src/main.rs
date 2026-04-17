@@ -6,6 +6,7 @@ pub mod middleware;
 pub mod models;
 pub mod ports;
 pub mod repositories;
+mod routes;
 pub mod services;
 mod state;
 #[cfg(test)]
@@ -18,9 +19,9 @@ use crate::repositories::order_impl::PgOrderRepository;
 use crate::repositories::order_status_history_impl::PgOrderStatusHistoryRepository;
 use crate::repositories::rating_jastiper_impl::PgRatingJastiperRepository;
 use crate::repositories::rating_product_impl::PgRatingProductRepository;
+use crate::routes::create_app;
 use crate::state::AppState;
 use axum::Router;
-use axum::routing::{get, patch, post};
 use std::sync::Arc;
 
 #[tokio::main]
@@ -44,67 +45,7 @@ async fn main() {
         auth_client: Arc::new(HttpAuthClient),
     });
 
-    let api_router = Router::new()
-        // ORDER
-        .route("/orders", post(controller::order::checkout))
-        .route("/orders/:order_id", get(controller::order::get_order))
-        .route(
-            "/orders/:order_id/payment",
-            patch(controller::order::payment),
-        )
-        .route(
-            "/orders/:order_id/confirm",
-            patch(controller::order::confirm_order),
-        )
-        .route(
-            "/orders/:order_id/purchased",
-            patch(controller::order::purchased),
-        )
-        .route(
-            "/orders/:order_id/shipped",
-            patch(controller::order::shipped),
-        )
-        .route(
-            "/orders/:order_id/history",
-            get(controller::order::get_order_history),
-        )
-        .route(
-            "/orders/:order_id/cancel",
-            post(controller::order::cancel_order),
-        )
-        .route("/orders/my/purchases", get(controller::order::my_purchases))
-        .route("/orders/my/sales", get(controller::order::my_sales))
-        // RATING
-        .route(
-            "/orders/:order_id/rating/jastiper",
-            get(controller::rating_jastiper::get_rating),
-        )
-        .route(
-            "/orders/:order_id/rating/jastiper",
-            post(controller::rating_jastiper::submit_rating_jastiper),
-        )
-        .route(
-            "/orders/:order_id/rating/product",
-            get(controller::rating_product::get_rating),
-        )
-        .route(
-            "/orders/:order_id/rating/product",
-            post(controller::rating_product::submit_rating_product),
-        )
-        // INTERNAL
-        .route(
-            "/internal/orders/:order_id/payment-info",
-            get(controller::internal::payment_info),
-        )
-        .route(
-            "/internal/orders/:order_id/payment-confirmed",
-            post(controller::internal::payment_confirmed),
-        )
-        .route(
-            "/internal/orders/:order_id/refund-confirmed",
-            post(controller::internal::refund_confirmed),
-        )
-        .with_state(state);
+    let api_router = create_app(state);
 
     let app = Router::new().merge(api_router);
     let listener = tokio::net::TcpListener::bind("0.0.0.0:8084").await.unwrap();
