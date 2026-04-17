@@ -183,9 +183,7 @@ pub async fn update_status(
                 "Hanya jastiper pemilik produk".to_string(),
             ));
         }
-        (OrderStatus::Completed, Role::Titipers)
-            if order.titipers_id != requester_id =>
-        {
+        (OrderStatus::Completed, Role::Titipers) if order.titipers_id != requester_id => {
             return Err(AppError::Forbidden(
                 "Hanya titipers pemilik order".to_string(),
             ));
