@@ -1,6 +1,7 @@
 // Unit tests untuk models
 
 pub mod filter_pagination_test;
+pub mod order_state_test;
 pub mod order_status_history_test;
 pub mod order_status_test;
 pub mod order_test;

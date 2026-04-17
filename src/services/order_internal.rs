@@ -121,11 +121,11 @@ pub async fn refund_confirmed(
         )
     };
 
-    let role = if order.status == OrderStatus::RefundFailed {
-        &Role::Admin
-    } else {
-        &Role::System
-    };
+    let role = &Role::System;
+    println!(
+        "🔍 [refund_confirmed] BEFORE update_status → order_id={}, current_status={:?}, target_status={:?}, role={:?}",
+        order_id, order.status, target_status, role
+    );
 
     let result = update_status(
         order_repo,
