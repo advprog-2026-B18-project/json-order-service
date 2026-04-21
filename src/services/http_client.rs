@@ -4,7 +4,10 @@ fn service_key() -> String {
     std::env::var("INTERNAL_SERVICE_KEY").expect("INTERNAL_SERVICE_KEY harus diset di .env")
 }
 
-pub(crate) async fn internal_post(url: &str, body: serde_json::Value) -> Result<(u16, serde_json::Value), AppError> {
+pub(crate) async fn internal_post(
+    url: &str,
+    body: serde_json::Value,
+) -> Result<(u16, serde_json::Value), AppError> {
     let response = reqwest::Client::new()
         .post(url)
         .header("X-Service-Key", service_key())

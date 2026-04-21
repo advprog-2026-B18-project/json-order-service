@@ -106,7 +106,9 @@ pub async fn confirm_order(
         state.order_repo.as_ref(),
         state.wallet_client.as_ref(),
         claims.user_id()?,
-        order_id).await?;
+        order_id,
+    )
+    .await?;
 
     Ok((
         StatusCode::OK,

@@ -15,8 +15,6 @@ use crate::ports::inventory_client::InventoryClient;
 use crate::ports::order_repository::OrderRepository;
 use crate::ports::order_status_history_repository::OrderStatusHistoryRepository;
 use crate::ports::wallet_client::WalletClient;
-use crate::repositories::order::find_by_id;
-use crate::repositories::rating_product::find_by_order_id;
 
 // ── checkout ──────────────────────────────────────────────────────
 pub async fn checkout(
@@ -241,7 +239,7 @@ pub async fn cancel_status(
     order_id: Uuid,
     requester_id: Uuid,
     role: &Role,
-    req: UpdateStatusRequest, // biarkan param ini untuk notes, cancellation_reason dll
+    req: UpdateStatusRequest,
 ) -> Result<Order, AppError> {
     let order = order_repo
         .find_by_id(order_id)
@@ -260,10 +258,7 @@ pub async fn cancel_status(
     let machine = OrderMachine::from_status(&order.status);
     let new_status = machine.cancel(role)?;
 
-    debug!(
-        "📋 [cancel_status] new status={:?}", // ← perbaiki debug
-        new_status
-    );
+    debug!("📋 [cancel_status] new status={:?}", new_status);
 
     let result = order_repo
         .update(
@@ -285,7 +280,7 @@ pub async fn cancel_status(
         })?;
 
     info!(
-        "✅ [cancel_status] order_id={} status updated to {:?}", // ← ganti req.status jadi new_status
+        "✅ [cancel_status] order_id={} status updated to {:?}",
         order_id, new_status
     );
     Ok(result)

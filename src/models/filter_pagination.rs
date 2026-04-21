@@ -22,6 +22,15 @@ pub struct PaginationParams {
     pub order: Option<SortOrder>,
 }
 
+#[derive(Debug, Deserialize, ToSchema, Default)]
+pub struct OrderQueryParams {
+    #[serde(flatten)]
+    pub pagination: PaginationParams,
+
+    #[serde(flatten)]
+    pub filter: OrderFilter,
+}
+
 #[derive(Debug, Deserialize, ToSchema, Default, Clone)]
 pub enum SortOrder {
     #[default]
