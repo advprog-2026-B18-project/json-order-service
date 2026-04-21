@@ -1,27 +1,26 @@
+use crate::error::AppError;
+use crate::middleware::security_config::validate_service_key;
+use crate::models::order::{PaymentConfirmedRequest, RefundConfirmedRequest};
+use crate::services::order_internal as order_internal_svc;
+use crate::state::AppState;
+use axum::http::HeaderMap;
 use axum::{
     Json,
     extract::{Path, State},
 };
-use reqwest::StatusCode;
 use serde_json::json;
-use sqlx::PgPool;
 use std::sync::Arc;
-use axum::http::HeaderMap;
 use uuid::Uuid;
-use crate::error::AppError;
-use crate::middleware::security_config::validate_service_key;
-use crate::models::order_request::{PaymentConfirmedRequest, RefundConfirmedRequest};
-use crate::services::order_internal as order_internal_svc;
 
 // GET /internal/orders/{order_id}/payment-info
 pub async fn payment_info(
-    State(pool): State<Arc<PgPool>>,
+    State(state): State<Arc<AppState>>,
     Path(order_id): Path<Uuid>,
     headers: HeaderMap,
 ) -> Result<Json<serde_json::Value>, AppError> {
     validate_service_key(&headers)?;
 
-    let order = order_internal_svc::get_order_internal(&pool, order_id).await?;
+    let order = order_internal_svc::get_order_internal(state.order_repo.as_ref(), order_id).await?;
 
     Ok(Json(json!({
         "success": true,
@@ -39,14 +38,15 @@ pub async fn payment_info(
 
 // POST /internal/orders/{order_id}/payment-confirmed
 pub async fn payment_confirmed(
-    State(pool): State<Arc<PgPool>>,
+    State(state): State<Arc<AppState>>,
     Path(order_id): Path<Uuid>,
-    headers: HeaderMap,                         // ← Headers dulu
-    Json(req): Json<PaymentConfirmedRequest>,   // ← Body/Json terakhir
+    headers: HeaderMap,
+    Json(req): Json<PaymentConfirmedRequest>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     validate_service_key(&headers)?;
 
-    let order = order_internal_svc::payment_confirmed(&pool, order_id, req).await?;
+    let order =
+        order_internal_svc::payment_confirmed(state.order_repo.as_ref(), order_id, req).await?;
 
     Ok(Json(json!({
         "success": true,
@@ -60,14 +60,15 @@ pub async fn payment_confirmed(
 
 // POST /internal/orders/{order_id}/refund-confirmed
 pub async fn refund_confirmed(
-    State(pool): State<Arc<PgPool>>,
+    State(state): State<Arc<AppState>>,
     headers: HeaderMap,
     Path(order_id): Path<Uuid>,
     Json(req): Json<RefundConfirmedRequest>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     validate_service_key(&headers)?;
 
-    let order = order_internal_svc::refund_confirmed(&pool, order_id, req).await?;
+    let order =
+        order_internal_svc::refund_confirmed(state.order_repo.as_ref(), order_id, req).await?;
 
     Ok(Json(json!({
         "success": true,
