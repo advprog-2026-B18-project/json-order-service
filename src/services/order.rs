@@ -15,6 +15,8 @@ use crate::ports::inventory_client::InventoryClient;
 use crate::ports::order_repository::OrderRepository;
 use crate::ports::order_status_history_repository::OrderStatusHistoryRepository;
 use crate::ports::wallet_client::WalletClient;
+use crate::repositories::order::find_by_id;
+use crate::repositories::rating_product::find_by_order_id;
 
 // ── checkout ──────────────────────────────────────────────────────
 pub async fn checkout(
@@ -39,8 +41,8 @@ pub async fn checkout(
             e
         })?;
 
-    let jastiper_id: Uuid =
-        serde_json::from_value(product["jastiperId"].clone()).map_err(|_| AppError::Internal)?;
+    let jastiper_id: Uuid = serde_json::from_value(product["jastiper"]["userId"].clone())
+        .map_err(|_| AppError::Internal)?;
 
     if titipers_id == jastiper_id {
         return Err(AppError::Forbidden(
@@ -49,7 +51,7 @@ pub async fn checkout(
     }
 
     let unit_price = product["price"].as_i64().unwrap_or(0);
-    let service_fee = product["service_fee"].as_i64().unwrap_or(0);
+    let service_fee = product["serviceFee"].as_i64().unwrap_or(0);
     let total_price = (unit_price + service_fee) * req.quantity as i64;
 
     let snapshot = json!({
@@ -57,8 +59,8 @@ pub async fn checkout(
         "name":           product["name"],
         "description":    product["description"],
         "image_url":      product["images"][0],
-        "origin_country": product["origin_country"],
-        "purchase_date":  product["purchase_date"],
+        "origin_country": product["originCountry"],
+        "purchase_date":  product["purchaseDate"],
         "unit_price":     unit_price,
         "service_fee":    service_fee,
     });
@@ -348,12 +350,35 @@ pub async fn payment(
     Ok(result)
 }
 
-// ── confirm_order ─────────────────────────────────────────────────
+// ── confirm_order ──────────────────────f───────────────────────────
 pub async fn confirm_order(
     order_repo: &dyn OrderRepository,
+    wallet_client: &dyn WalletClient,
     titipers_id: Uuid,
     order_id: Uuid,
 ) -> Result<Order, AppError> {
+    let order = order_repo
+        .find_by_id(order_id)
+        .await
+        .map_err(|e| {
+            error!("❌ [get_order] DB error: {:?}", e);
+            e
+        })?
+        .ok_or_else(|| {
+            warn!("⚠️ [get_order] order not found: {}", order_id);
+            AppError::NotFound("Pesanan tidak ditemukan".to_string())
+        })?;
+
+    let desc = format!("Pendapatan Order #{}", order_id);
+    if let Err(e) = wallet_client
+        .earnings_wallet(order.jastiper_id, order_id, &desc)
+        .await
+    {
+        error!("❌ [payment] earnings_wallet gagal: {:?}", e);
+        return Err(e);
+    }
+    info!("✅ [payment] wallet earnings, wallet service sudah memberikan pembayaran ke jastiper");
+
     let result = update_status(
         order_repo,
         order_id,
@@ -369,7 +394,7 @@ pub async fn confirm_order(
     )
     .await
     .map_err(|e| {
-        error!("❌ [payment] update_status gagal: {:?}", e);
+        error!("❌ [confirm] update_status gagal: {:?}", e);
         e
     })?;
 
