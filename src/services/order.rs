@@ -49,7 +49,7 @@ pub async fn checkout(
     }
 
     let unit_price = product["price"].as_i64().unwrap_or(0);
-    let service_fee = product["serviceFee"].as_i64().unwrap_or(0);
+    let service_fee = product["service_fee"].as_i64().unwrap_or(0);
     let total_price = (unit_price + service_fee) * req.quantity as i64;
 
     let snapshot = json!({
