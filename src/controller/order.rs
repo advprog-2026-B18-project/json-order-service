@@ -102,7 +102,13 @@ pub async fn confirm_order(
     claims: JwtClaims,
     Path(order_id): Path<Uuid>,
 ) -> Result<(StatusCode, Json<serde_json::Value>), AppError> {
-    let order = svc::confirm_order(state.order_repo.as_ref(), claims.user_id()?, order_id).await?;
+    let order = svc::confirm_order(
+        state.order_repo.as_ref(),
+        state.wallet_client.as_ref(),
+        claims.user_id()?,
+        order_id,
+    )
+    .await?;
 
     Ok((
         StatusCode::OK,

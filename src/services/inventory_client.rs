@@ -32,13 +32,13 @@ async fn manage_stock(
     );
 
     let url = format!(
-        "{}/products/internal/{}/stock/{}",
+        "{}/internal/products/{}/stock/{}",
         inventory_url(),
         product_id,
         suffix
     );
 
-    let status = crate::services::http_client::internal_post(
+    let (status, _) = crate::services::http_client::internal_post(
         &url,
         json!({ "order_id": order_id, "quantity": quantity }),
     )
@@ -183,7 +183,7 @@ pub(crate) async fn send_product_rating(
         "product_images": product_images,
     });
 
-    let status = crate::services::http_client::internal_post(&url, payload).await?;
+    let (status, _) = crate::services::http_client::internal_post(&url, payload).await?;
 
     match status {
         200 => {

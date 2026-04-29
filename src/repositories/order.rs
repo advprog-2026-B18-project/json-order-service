@@ -106,8 +106,12 @@ fn build_filter_condition(filter: Option<&OrderFilter>) -> Cond {
         );
     }
 
-    cond = cond.add(Expr::col(OrderIden::CreatedAt).gte(f.date_from));
-    cond = cond.add(Expr::col(OrderIden::CreatedAt).lte(f.date_to));
+    if let Some(date_from) = f.date_from {
+        cond = cond.add(Expr::col(OrderIden::CreatedAt).gte(date_from));
+    }
+    if let Some(date_to) = f.date_to {
+        cond = cond.add(Expr::col(OrderIden::CreatedAt).lte(date_to));
+    }
 
     cond
 }

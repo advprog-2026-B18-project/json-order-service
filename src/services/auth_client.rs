@@ -30,7 +30,7 @@ pub(crate) async fn send_jastiper_rating(
         jastiper_id, order_id, rating, review
     );
 
-    let status = internal_post(&url, payload).await?;
+    let (status, _) = internal_post(&url, payload).await?;
 
     debug!("👤 [user] send_jastiper_rating response: HTTP {}", status);
 

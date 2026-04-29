@@ -39,8 +39,8 @@ pub async fn checkout(
             e
         })?;
 
-    let jastiper_id: Uuid =
-        serde_json::from_value(product["jastiperId"].clone()).map_err(|_| AppError::Internal)?;
+    let jastiper_id: Uuid = serde_json::from_value(product["jastiper"]["userId"].clone())
+        .map_err(|_| AppError::Internal)?;
 
     if titipers_id == jastiper_id {
         return Err(AppError::Forbidden(
@@ -57,8 +57,8 @@ pub async fn checkout(
         "name":           product["name"],
         "description":    product["description"],
         "image_url":      product["images"][0],
-        "origin_country": product["origin_country"],
-        "purchase_date":  product["purchase_date"],
+        "origin_country": product["originCountry"],
+        "purchase_date":  product["purchaseDate"],
         "unit_price":     unit_price,
         "service_fee":    service_fee,
     });
@@ -239,7 +239,7 @@ pub async fn cancel_status(
     order_id: Uuid,
     requester_id: Uuid,
     role: &Role,
-    req: UpdateStatusRequest, // biarkan param ini untuk notes, cancellation_reason dll
+    req: UpdateStatusRequest,
 ) -> Result<Order, AppError> {
     let order = order_repo
         .find_by_id(order_id)
@@ -258,10 +258,7 @@ pub async fn cancel_status(
     let machine = OrderMachine::from_status(&order.status);
     let new_status = machine.cancel(role)?;
 
-    debug!(
-        "📋 [cancel_status] new status={:?}", // ← perbaiki debug
-        new_status
-    );
+    debug!("📋 [cancel_status] new status={:?}", new_status);
 
     let result = order_repo
         .update(
@@ -283,7 +280,7 @@ pub async fn cancel_status(
         })?;
 
     info!(
-        "✅ [cancel_status] order_id={} status updated to {:?}", // ← ganti req.status jadi new_status
+        "✅ [cancel_status] order_id={} status updated to {:?}",
         order_id, new_status
     );
     Ok(result)
@@ -348,12 +345,35 @@ pub async fn payment(
     Ok(result)
 }
 
-// ── confirm_order ─────────────────────────────────────────────────
+// ── confirm_order ──────────────────────f───────────────────────────
 pub async fn confirm_order(
     order_repo: &dyn OrderRepository,
+    wallet_client: &dyn WalletClient,
     titipers_id: Uuid,
     order_id: Uuid,
 ) -> Result<Order, AppError> {
+    let order = order_repo
+        .find_by_id(order_id)
+        .await
+        .map_err(|e| {
+            error!("❌ [get_order] DB error: {:?}", e);
+            e
+        })?
+        .ok_or_else(|| {
+            warn!("⚠️ [get_order] order not found: {}", order_id);
+            AppError::NotFound("Pesanan tidak ditemukan".to_string())
+        })?;
+
+    let desc = format!("Pendapatan Order #{}", order_id);
+    if let Err(e) = wallet_client
+        .earnings_wallet(order.jastiper_id, order_id, &desc)
+        .await
+    {
+        error!("❌ [payment] earnings_wallet gagal: {:?}", e);
+        return Err(e);
+    }
+    info!("✅ [payment] wallet earnings, wallet service sudah memberikan pembayaran ke jastiper");
+
     let result = update_status(
         order_repo,
         order_id,
@@ -369,7 +389,7 @@ pub async fn confirm_order(
     )
     .await
     .map_err(|e| {
-        error!("❌ [payment] update_status gagal: {:?}", e);
+        error!("❌ [confirm] update_status gagal: {:?}", e);
         e
     })?;
 

@@ -22,4 +22,11 @@ pub trait WalletClient: Send + Sync {
     ) -> Result<(), AppError>;
 
     async fn check_wallet(&self, user_id: Uuid, req_amount: i64) -> Result<(), AppError>;
+
+    async fn earnings_wallet(
+        &self,
+        jastiper_id: Uuid,
+        order_id: Uuid,
+        description: &str,
+    ) -> Result<(), AppError>;
 }

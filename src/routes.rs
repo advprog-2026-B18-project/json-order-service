@@ -65,6 +65,13 @@ pub fn create_app(state: Arc<AppState>) -> Router {
             "/internal/orders/:order_id/refund-confirmed",
             post(controller::internal::refund_confirmed),
         )
+        // ADMIN
+        .route("/admin/orders", get(controller::admin::get_all))
+        .route("/admin/orders/:order_id", get(controller::admin::get_order))
+        .route(
+            "/admin/orders/:order_id/force-cancel",
+            post(controller::admin::force_cancel),
+        )
         .with_state(state.clone());
 
     Router::new().merge(api_router)
