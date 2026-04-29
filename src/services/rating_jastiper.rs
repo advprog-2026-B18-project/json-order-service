@@ -1,4 +1,3 @@
-use sqlx::PgPool;
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 use validator::Validate;
@@ -6,12 +5,13 @@ use validator::Validate;
 use crate::error::AppError;
 use crate::models::order_state::OrderStatus;
 use crate::models::rating_jastiper::{CreateRatingJastiperRequest, RatingJastiper};
-use crate::repositories::order as order_repo;
-use crate::repositories::rating_jastiper as rating_jastiper_repo;
+use crate::ports::order_repository::OrderRepository;
+use crate::ports::rating_jastiper_repository::RatingJastiperRepository;
 use crate::services::auth_client::send_jastiper_rating;
 
 pub async fn submit_rating_jastiper(
-    pool: &PgPool,
+    order_repo: &dyn OrderRepository,
+    rating_jastiper_repo: &dyn RatingJastiperRepository,
     order_id: Uuid,
     titipers_id: Uuid,
     req: CreateRatingJastiperRequest,
@@ -26,7 +26,8 @@ pub async fn submit_rating_jastiper(
         AppError::Validation(e.to_string())
     })?;
 
-    let order = order_repo::find_by_id(pool, order_id)
+    let order = order_repo
+        .find_by_id(order_id)
         .await
         .map_err(|e| {
             error!("❌ [submit_rating_jastiper] DB error: {:?}", e);
@@ -57,7 +58,8 @@ pub async fn submit_rating_jastiper(
         ));
     }
 
-    if rating_jastiper_repo::find_by_order_id(pool, order_id)
+    if rating_jastiper_repo
+        .find_by_order_id(order_id)
         .await?
         .is_some()
     {
@@ -71,7 +73,8 @@ pub async fn submit_rating_jastiper(
     }
 
     debug!("💾 [submit_rating_jastiper] saving rating to DB");
-    let rating = rating_jastiper_repo::create(pool, order_id, titipers_id, &req)
+    let rating = rating_jastiper_repo
+        .create(order_id, titipers_id, &req)
         .await
         .map_err(|e| {
             error!("❌ [submit_rating_jastiper] repo::create gagal: {:?}", e);
@@ -107,7 +110,8 @@ pub async fn submit_rating_jastiper(
 }
 
 pub async fn get_rating(
-    pool: &PgPool,
+    order_repo: &dyn OrderRepository,
+    rating_jastiper_repo: &dyn RatingJastiperRepository,
     order_id: Uuid,
     requester_id: Uuid,
 ) -> Result<RatingJastiper, AppError> {
@@ -116,7 +120,8 @@ pub async fn get_rating(
         order_id, requester_id
     );
 
-    let order = order_repo::find_by_id(pool, order_id)
+    let order = order_repo
+        .find_by_id(order_id)
         .await?
         .ok_or_else(|| AppError::NotFound("Pesanan tidak ditemukan".to_string()))?;
 
@@ -130,7 +135,8 @@ pub async fn get_rating(
         ));
     }
 
-    rating_jastiper_repo::find_by_order_id(pool, order_id)
+    rating_jastiper_repo
+        .find_by_order_id(order_id)
         .await?
         .ok_or_else(|| {
             warn!(

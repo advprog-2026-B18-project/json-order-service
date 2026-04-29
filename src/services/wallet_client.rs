@@ -35,13 +35,7 @@ async fn manage_wallet(
         "description": description,
     });
 
-    debug!("💳 [wallet] {} → POST {}", endpoint, url);
-    debug!(
-        "💳 [wallet] payload: user_id={} order_id={} amount={} desc='{}'",
-        user_id, order_id, amount, description
-    );
-
-    let status = crate::services::http_client::internal_post(&url, body).await?;
+    let (status, _) = crate::services::http_client::internal_post(&url, body).await?;
 
     match (action, status) {
         (WalletAction::Deduct, 200) => {
@@ -60,7 +54,7 @@ async fn manage_wallet(
                 "ℹ️ [wallet] deduct idempotent (sudah diproses) order_id={}",
                 order_id
             );
-            Ok(()) // idempotent
+            Ok(())
         }
         (WalletAction::Deduct, 422) => {
             warn!(
@@ -90,7 +84,7 @@ async fn manage_wallet(
                 "ℹ️ [wallet] refund idempotent (sudah direfund) order_id={}",
                 order_id
             );
-            Ok(()) // 409 = sudah direfund
+            Ok(())
         }
         (WalletAction::Refund, code) => {
             error!(
@@ -169,6 +163,70 @@ pub(crate) async fn check_wallet(user_id: Uuid, req_amount: i64) -> Result<(), A
             error!(
                 "❌ [wallet] check wallet unexpected status={} user_id={}",
                 status, user_id
+            );
+            Err(AppError::Internal)
+        }
+    }
+}
+
+pub(crate) async fn earnings_wallet(
+    jastiper_id: Uuid,
+    order_id: Uuid,
+    description: &str,
+) -> Result<(), AppError> {
+    debug!("💳 [wallet] earnings_wallet user_id={}", jastiper_id);
+
+    let url = format!("{}/internal/wallets/earnings", wallet_url());
+    let body = json!({
+        "jastiper_id":     jastiper_id,
+        "order_id":    order_id,
+        "description": description,
+    });
+
+    let (status, body) = crate::services::http_client::internal_post(&url, body).await?;
+
+    match status {
+        200 => match body["status"].as_str() {
+            Some("SUCCESS") => {
+                debug!(
+                    "✅ [wallet] earnings_wallet berhasil untuk jastiper_id={}, order_id={}",
+                    jastiper_id, order_id
+                );
+                Ok(())
+            }
+            _ => {
+                warn!(
+                    "❌ [wallet] earnings_wallet GAGAL untuk jastiper_id={}, order_id={}",
+                    jastiper_id, order_id
+                );
+                Err(AppError::UnprocessableEntity(
+                    "Pendapatan gagal dikreditkan".to_string(),
+                ))
+            }
+        },
+        409 => {
+            let transaction_id = body["transaction_id"].as_str().unwrap_or("unknown");
+            warn!(
+                "⚠️ [wallet] earnings_wallet conflict: sudah diproses untuk jastiper_id={}, order_id={}, transaction_id={}",
+                jastiper_id, order_id, transaction_id
+            );
+            Err(AppError::Conflict(
+                "Pendapatan untuk order ini sudah diproses".to_string(),
+            ))
+        }
+        404 => {
+            let message = body["message"].as_str().unwrap_or("Not found");
+            debug!(
+                "⚠️ [wallet] earnings_wallet 404: jastiper_id={}, order_id={}, message={}",
+                jastiper_id, order_id, message
+            );
+
+            Err(AppError::NotFound(message.to_string()))
+        }
+        _ => {
+            error!(
+                "❌ [wallet] earnings_wallet unexpected status={} untuk jastiper_id={}, order_id={}",
+                status, jastiper_id, order_id
             );
             Err(AppError::Internal)
         }

@@ -1,10 +1,13 @@
 #[cfg(test)]
 mod tests {
+    use serde_json::json;
     use sqlx::PgPool;
     use uuid::Uuid;
 
     use crate::models::filter_pagination::{OrderFilter, PaginationParams};
-    use crate::models::order::{CreateOrderRequest, ShippingAddress};
+    use crate::models::order::{
+        CreateOrderRequest, PriceBreakdown, ShippingAddress, UpdateOrderParams,
+    };
     use crate::models::order_state::OrderStatus;
     use crate::models::role::Role;
     use crate::repositories::order;
@@ -30,15 +33,28 @@ mod tests {
             note_to_jastiper: Some("Tolong dibungkus rapi".to_string()),
         };
 
+        let snapshot = json!({
+            "product_id": "3b07c9e0-8e1b-4fbb-9dd2-3e6aa79111fb",
+            "name": "Sepatu Nike Air Force 1",
+            "description": "Sepatu original limited edition",
+            "image_url": "https://example.com/images/sepatu-nike.jpg",
+            "origin_country": "Vietnam",
+            "purchase_date": "2025-12-01",
+            "unit_price": 850_000,
+            "service_fee": 50_000
+        });
+
         let created = order::create(
             pool,
             titipers_id,
             jastiper_id,
             req,
-            serde_json::json!({"name": "Matcha Kit Kat"}),
-            25_000,
-            2_000,
-            52_000,
+            snapshot,
+            PriceBreakdown {
+                unit_price: 25_000,
+                service_fee: 2_000,
+                total_price: 52_000,
+            },
         )
         .await
         .expect("Gagal membuat dummy order");
@@ -87,10 +103,12 @@ mod tests {
             titipers_id,
             jastiper_id,
             req,
-            serde_json::json!({"name": "Produk A"}),
-            10_000,
-            1_000,
-            11_000,
+            json!({"name": "Produk A"}),
+            PriceBreakdown {
+                unit_price: 10_000,
+                service_fee: 1_000,
+                total_price: 11_000,
+            },
         )
         .await
         .expect("Gagal create order tanpa note");
@@ -224,12 +242,14 @@ mod tests {
             &pool,
             created.order_id,
             &OrderStatus::Paid,
-            &titipers_id.to_string(),
-            &Role::Titipers,
-            Some("Pembayaran diterima"),
-            None,
-            None,
-            None,
+            UpdateOrderParams {
+                changed_by: &titipers_id.to_string(),
+                actor_role: &Role::Titipers,
+                notes: Some("Pembayaran diterima"),
+                tracking_number: None,
+                courier: None,
+                cancellation_reason: None,
+            },
         )
         .await
         .expect("Update gagal");
@@ -246,12 +266,14 @@ mod tests {
             &pool,
             created.order_id,
             &OrderStatus::Completed,
-            &jastiper_id.to_string(),
-            &Role::Jastiper,
-            Some("Pesanan selesai dikirim"),
-            Some("JNE-12345"),
-            Some("JNE"),
-            None,
+            UpdateOrderParams {
+                changed_by: &jastiper_id.to_string(),
+                actor_role: &Role::Jastiper,
+                notes: Some("Pesanan selesai dikirim"),
+                tracking_number: Some("JNE-12345"),
+                courier: Some("JNE"),
+                cancellation_reason: None,
+            },
         )
         .await
         .expect("Update gagal");
@@ -270,12 +292,14 @@ mod tests {
             &pool,
             created.order_id,
             &OrderStatus::Cancelled,
-            &titipers_id.to_string(),
-            &Role::Titipers,
-            Some("Dibatalkan oleh titipers"),
-            None,
-            None,
-            Some("Barang tidak tersedia"),
+            UpdateOrderParams {
+                changed_by: &titipers_id.to_string(),
+                actor_role: &Role::Titipers,
+                notes: Some("Dibatalkan oleh titipers"),
+                tracking_number: None,
+                courier: None,
+                cancellation_reason: Some("Barang tidak tersedia"),
+            },
         )
         .await
         .expect("Update gagal");

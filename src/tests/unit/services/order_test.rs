@@ -1,405 +1,821 @@
-#[cfg(test)]
-mod tests {
-    use chrono::Utc;
-    use serde_json::json;
-    use uuid::Uuid;
+use serde_json::json;
+use uuid::Uuid;
 
-    use crate::models::filter_pagination::PaginationParams;
-    use crate::models::order::{CancelRequest, CreateOrderRequest, Order, UpdateStatusRequest};
-    use crate::models::order_state::OrderStatus;
-    use crate::models::role::Role;
-    use crate::models::shipping_address::ShippingAddress;
+use crate::error::AppError;
+use crate::models::filter_pagination::PaginationParams;
+use crate::models::order::{
+    CancelRequest, CreateOrderRequest, Order, ShippedRequest, UpdateStatusRequest,
+};
+use crate::models::order_state::OrderStatus;
+use crate::models::role::Role;
+use crate::models::shipping_address::ShippingAddress;
+use crate::ports::inventory_client::MockInventoryClient;
+use crate::ports::order_repository::MockOrderRepository;
+use crate::ports::order_status_history_repository::MockOrderStatusHistoryRepository;
+use crate::ports::wallet_client::MockWalletClient;
+use crate::services::order;
 
-    fn make_order(
-        order_id: Uuid,
-        titipers_id: Uuid,
-        jastiper_id: Uuid,
-        status: OrderStatus,
-    ) -> Order {
-        Order {
-            order_id,
-            titipers_id,
-            jastiper_id,
-            product_id: Uuid::new_v4(),
-            product_snapshot: json!({
-                "product_id": Uuid::new_v4(),
-                "name": "Matcha Kit Kat",
-            }),
-            quantity: 2,
-            unit_price: 25_000,
-            service_fee: 2_000,
-            total_price: 54_000,
-            status,
-            shipping_address: json!({}),
-            note_to_jastiper: None,
-            tracking_number: None,
-            courier: None,
-            cancellation_reason: None,
-            cancelled_by: None,
-            completed_at: None,
-            created_at: Utc::now(),
-            updated_at: Utc::now(),
-        }
+fn make_order(order_id: Uuid, titipers_id: Uuid, jastiper_id: Uuid, status: OrderStatus) -> Order {
+    Order {
+        order_id,
+        titipers_id,
+        jastiper_id,
+        product_id: Uuid::new_v4(),
+        product_snapshot: json!({}),
+        quantity: 1,
+        unit_price: 10_000,
+        service_fee: 1_000,
+        total_price: 11_000,
+        status,
+        shipping_address: json!({}),
+        note_to_jastiper: Option::from(String::new()),
+        tracking_number: None,
+        courier: None,
+        cancellation_reason: None,
+        cancelled_by: None,
+        completed_at: None,
+        created_at: chrono::Utc::now(),
+        updated_at: chrono::Utc::now(),
     }
+}
 
-    fn make_shipping_address() -> ShippingAddress {
-        ShippingAddress {
-            recipient_name: "Adpro".to_string(),
-            phone_number: "08123456789".to_string(),
-            street: "Jl. Margonda No. 1".to_string(),
-            kelurahan: "Beji".to_string(),
-            kecamatan: "Beji".to_string(),
-            city: "Depok".to_string(),
-            province: "Jawa Barat".to_string(),
-            postal_code: "16424".to_string(),
-            notes: None,
-        }
+fn make_create_request(product_id: Uuid) -> CreateOrderRequest {
+    CreateOrderRequest {
+        product_id,
+        quantity: 1,
+        shipping_address: ShippingAddress {
+            recipient_name: "Ahmad Fauzan".to_string(),
+            phone_number: "081234567890".to_string(),
+            street: "Jl. Mawar No. 12, RT 05 RW 03".to_string(),
+            kelurahan: "Cipete Selatan".to_string(),
+            kecamatan: "Cilandak".to_string(),
+            city: "Kota Jakarta Selatan".to_string(),
+            province: "DKI Jakarta".to_string(),
+            postal_code: "12410".to_string(),
+            notes: Some("Kode pos dekat Kantor Lurah, tolong bell apartemen tiga kali".to_string()),
+        },
+        note_to_jastiper: None,
     }
+}
 
-    mod get_order {
-        use super::*;
-
-        // get_order harus return order jika requester adalah titipers
-        #[test]
-        fn test_titipers_bisa_akses_order() {
-            let order_id = Uuid::new_v4();
-            let titipers_id = Uuid::new_v4();
-            let jastiper_id = Uuid::new_v4();
-            let order = make_order(order_id, titipers_id, jastiper_id, OrderStatus::Pending);
-
-            // Validasi: titipers_id cocok, tidak boleh return Forbidden
-            assert_eq!(order.titipers_id, titipers_id);
-            assert_ne!(order.titipers_id, jastiper_id);
-        }
-
-        // get_order harus return order jika requester adalah jastiper
-        #[test]
-        fn test_jastiper_bisa_akses_order() {
-            let order_id = Uuid::new_v4();
-            let titipers_id = Uuid::new_v4();
-            let jastiper_id = Uuid::new_v4();
-            let order = make_order(order_id, titipers_id, jastiper_id, OrderStatus::Pending);
-
-            // jastiper_id cocok dengan order
-            assert_eq!(order.jastiper_id, jastiper_id);
-        }
-
-        // get_order harus return Forbidden jika requester bukan titipers/jastiper
-        #[test]
-        fn test_orang_lain_tidak_bisa_akses_order() {
-            let order_id = Uuid::new_v4();
-            let titipers_id = Uuid::new_v4();
-            let jastiper_id = Uuid::new_v4();
-            let orang_lain = Uuid::new_v4();
-            let order = make_order(order_id, titipers_id, jastiper_id, OrderStatus::Pending);
-
-            // Simulasi logic forbidden check
-            let is_forbidden = order.titipers_id != orang_lain && order.jastiper_id != orang_lain;
-            assert!(is_forbidden);
-        }
+fn make_pagination() -> PaginationParams {
+    PaginationParams {
+        page: Some(1),
+        limit: Some(10),
+        sort_by: None,
+        order: None,
     }
+}
 
-    mod update_status {
-        use super::*;
-        use crate::models::order_state::OrderMachine;
+#[tokio::test]
+async fn checkout_sukses() {
+    let titipers_id = Uuid::new_v4();
+    let jastiper_id = Uuid::new_v4();
+    let product_id = Uuid::new_v4();
 
-        // update_status PENDING → PAID oleh System harus berhasil
-        #[test]
-        fn test_pending_ke_paid_oleh_system_berhasil() {
-            let mut machine = OrderMachine::from_status(&OrderStatus::Pending);
-            let result = machine.update_status(&Role::System, &OrderStatus::Paid);
-            assert!(result.is_ok());
-            assert_eq!(result.unwrap(), OrderStatus::Paid);
+    let mut inv = MockInventoryClient::new();
+    let mut wallet = MockWalletClient::new();
+    let mut repo = MockOrderRepository::new();
+
+    let product_json = json!({
+        "jastiperId": jastiper_id,
+        "name": "Snickers",
+        "description": "Coklat",
+        "images": ["http://img.url"],
+        "origin_country": "Japan",
+        "purchase_date": "2026-01-01",
+        "price": 10_000_i64,
+        "service_fee": 1_000_i64,
+    });
+
+    inv.expect_fetch_product()
+        .returning(move |_| Ok(product_json.clone()));
+
+    inv.expect_reserve_stock().returning(|_, _, _| Ok(()));
+
+    wallet.expect_check_wallet().returning(|_, _| Ok(()));
+
+    let expected_order = make_order(
+        Uuid::new_v4(),
+        titipers_id,
+        jastiper_id,
+        OrderStatus::Pending,
+    );
+    repo.expect_create()
+        .returning(move |_, _, _, _, _| Ok(expected_order.clone()));
+
+    let req = make_create_request(product_id);
+    let result = order::checkout(&repo, &inv, &wallet, titipers_id, req).await;
+
+    assert!(result.is_ok());
+}
+
+#[tokio::test]
+async fn checkout_gagal_jastiper_beli_produk_sendiri() {
+    let user_id = Uuid::new_v4();
+    let product_id = Uuid::new_v4();
+
+    let mut inv = MockInventoryClient::new();
+    let wallet = MockWalletClient::new();
+    let repo = MockOrderRepository::new();
+
+    let product_json = json!({
+        "jastiperId": user_id.to_string(),   // ← Ubah jadi String
+        "price": 10_000_i64,
+        "service_fee": 1_000_i64,
+    });
+
+    inv.expect_fetch_product()
+        .returning(move |_| Ok(product_json.clone()));
+
+    let req = make_create_request(product_id);
+    let result = order::checkout(&repo, &inv, &wallet, user_id, req).await;
+
+    assert!(matches!(result, Err(AppError::Forbidden(_))));
+}
+
+#[tokio::test]
+async fn checkout_gagal_fetch_product_error() {
+    let titipers_id = Uuid::new_v4();
+    let product_id = Uuid::new_v4();
+
+    let mut inv = MockInventoryClient::new();
+    let wallet = MockWalletClient::new();
+    let repo = MockOrderRepository::new();
+
+    inv.expect_fetch_product()
+        .returning(|_| Err(AppError::Internal));
+
+    let req = make_create_request(product_id);
+    let result = order::checkout(&repo, &inv, &wallet, titipers_id, req).await;
+
+    assert!(result.is_err());
+}
+
+#[tokio::test]
+async fn checkout_gagal_check_wallet_release_stock() {
+    let titipers_id = Uuid::new_v4();
+    let jastiper_id = Uuid::new_v4();
+    let product_id = Uuid::new_v4();
+
+    let mut inv = MockInventoryClient::new();
+    let mut wallet = MockWalletClient::new();
+    let repo = MockOrderRepository::new();
+
+    let product_json = json!({
+        "jastiperId": jastiper_id,
+        "price": 10_000_i64,
+        "service_fee": 1_000_i64,
+    });
+
+    inv.expect_fetch_product()
+        .returning(move |_| Ok(product_json.clone()));
+
+    inv.expect_reserve_stock().returning(|_, _, _| Ok(()));
+
+    inv.expect_release_stock().returning(|_, _, _| Ok(()));
+
+    wallet.expect_check_wallet().returning(|_, _| {
+        Err(AppError::UnprocessableEntity(
+            "Saldo tidak cukup".to_string(),
+        ))
+    });
+
+    let req = make_create_request(product_id);
+    let result = order::checkout(&repo, &inv, &wallet, titipers_id, req).await;
+
+    assert!(result.is_err());
+}
+
+#[tokio::test]
+async fn checkout_gagal_create_order_release_stock() {
+    let titipers_id = Uuid::new_v4();
+    let jastiper_id = Uuid::new_v4();
+    let product_id = Uuid::new_v4();
+
+    let mut inv = MockInventoryClient::new();
+    let mut wallet = MockWalletClient::new();
+    let mut repo = MockOrderRepository::new();
+
+    let product_json = json!({
+        "jastiperId": jastiper_id,
+        "price": 10_000_i64,
+        "service_fee": 1_000_i64,
+    });
+
+    inv.expect_fetch_product()
+        .returning(move |_| Ok(product_json.clone()));
+
+    inv.expect_reserve_stock().returning(|_, _, _| Ok(()));
+
+    wallet.expect_check_wallet().returning(|_, _| Ok(()));
+
+    inv.expect_release_stock().returning(|_, _, _| Ok(()));
+
+    repo.expect_create()
+        .returning(|_, _, _, _, _| Err(AppError::Internal));
+
+    let req = make_create_request(product_id);
+    let result = order::checkout(&repo, &inv, &wallet, titipers_id, req).await;
+
+    assert!(result.is_err());
+}
+
+#[tokio::test]
+async fn get_order_sukses_sebagai_titipers() {
+    let titipers_id = Uuid::new_v4();
+    let jastiper_id = Uuid::new_v4();
+    let order_id = Uuid::new_v4();
+
+    let mut repo = MockOrderRepository::new();
+    let expected = make_order(order_id, titipers_id, jastiper_id, OrderStatus::Pending);
+
+    repo.expect_find_by_id()
+        .returning(move |_| Ok(Some(expected.clone())));
+
+    let result = order::get_order(&repo, order_id, titipers_id).await;
+    assert!(result.is_ok());
+}
+
+#[tokio::test]
+async fn get_order_sukses_sebagai_jastiper() {
+    let titipers_id = Uuid::new_v4();
+    let jastiper_id = Uuid::new_v4();
+    let order_id = Uuid::new_v4();
+
+    let mut repo = MockOrderRepository::new();
+    let expected = make_order(order_id, titipers_id, jastiper_id, OrderStatus::Pending);
+
+    repo.expect_find_by_id()
+        .returning(move |_| Ok(Some(expected.clone())));
+
+    let result = order::get_order(&repo, order_id, jastiper_id).await;
+    assert!(result.is_ok());
+}
+
+#[tokio::test]
+async fn get_order_gagal_tidak_ditemukan() {
+    let mut repo = MockOrderRepository::new();
+
+    repo.expect_find_by_id().returning(|_| Ok(None));
+
+    let result = order::get_order(&repo, Uuid::new_v4(), Uuid::new_v4()).await;
+    assert!(matches!(result, Err(AppError::NotFound(_))));
+}
+
+#[tokio::test]
+async fn get_order_gagal_bukan_pemilik() {
+    let titipers_id = Uuid::new_v4();
+    let jastiper_id = Uuid::new_v4();
+    let orang_lain = Uuid::new_v4();
+    let order_id = Uuid::new_v4();
+
+    let mut repo = MockOrderRepository::new();
+    let expected = make_order(order_id, titipers_id, jastiper_id, OrderStatus::Pending);
+
+    repo.expect_find_by_id()
+        .returning(move |_| Ok(Some(expected.clone())));
+
+    let result = order::get_order(&repo, order_id, orang_lain).await;
+    assert!(matches!(result, Err(AppError::Forbidden(_))));
+}
+
+#[tokio::test]
+async fn update_status_sukses_jastiper_ke_purchased() {
+    let titipers_id = Uuid::new_v4();
+    let jastiper_id = Uuid::new_v4();
+    let order_id = Uuid::new_v4();
+
+    let mut repo = MockOrderRepository::new();
+    let order = make_order(order_id, titipers_id, jastiper_id, OrderStatus::Paid);
+    let updated = make_order(order_id, titipers_id, jastiper_id, OrderStatus::Purchased);
+
+    repo.expect_find_by_id()
+        .returning(move |_| Ok(Some(order.clone())));
+    repo.expect_update()
+        .returning(move |_, _, _| Ok(updated.clone()));
+
+    let req = UpdateStatusRequest {
+        status: OrderStatus::Purchased,
+        notes: None,
+        tracking_number: None,
+        courier: None,
+        cancellation_reason: None,
+    };
+
+    let result = order::update_status(&repo, order_id, jastiper_id, &Role::Jastiper, req).await;
+    assert!(result.is_ok());
+    assert_eq!(result.unwrap().status, OrderStatus::Purchased);
+}
+
+#[tokio::test]
+async fn update_status_gagal_jastiper_bukan_pemilik() {
+    let titipers_id = Uuid::new_v4();
+    let jastiper_id = Uuid::new_v4();
+    let jastiper_lain = Uuid::new_v4();
+    let order_id = Uuid::new_v4();
+
+    let mut repo = MockOrderRepository::new();
+    let order = make_order(order_id, titipers_id, jastiper_id, OrderStatus::Paid);
+
+    repo.expect_find_by_id()
+        .returning(move |_| Ok(Some(order.clone())));
+
+    let req = UpdateStatusRequest {
+        status: OrderStatus::Purchased,
+        notes: None,
+        tracking_number: None,
+        courier: None,
+        cancellation_reason: None,
+    };
+
+    let result = order::update_status(&repo, order_id, jastiper_lain, &Role::Jastiper, req).await;
+    assert!(matches!(result, Err(AppError::Forbidden(_))));
+}
+
+#[tokio::test]
+async fn update_status_gagal_shipped_tanpa_tracking_number() {
+    let titipers_id = Uuid::new_v4();
+    let jastiper_id = Uuid::new_v4();
+    let order_id = Uuid::new_v4();
+
+    let mut repo = MockOrderRepository::new();
+    let order = make_order(order_id, titipers_id, jastiper_id, OrderStatus::Purchased);
+
+    repo.expect_find_by_id()
+        .returning(move |_| Ok(Some(order.clone())));
+
+    let req = UpdateStatusRequest {
+        status: OrderStatus::Shipped,
+        notes: None,
+        tracking_number: None,
+        courier: Some("JNE".to_string()),
+        cancellation_reason: None,
+    };
+
+    let result = order::update_status(&repo, order_id, jastiper_id, &Role::Jastiper, req).await;
+    assert!(matches!(result, Err(AppError::UnprocessableEntity(_))));
+}
+
+#[tokio::test]
+async fn update_status_gagal_shipped_tanpa_courier() {
+    let titipers_id = Uuid::new_v4();
+    let jastiper_id = Uuid::new_v4();
+    let order_id = Uuid::new_v4();
+
+    let mut repo = MockOrderRepository::new();
+    let order = make_order(order_id, titipers_id, jastiper_id, OrderStatus::Purchased);
+
+    repo.expect_find_by_id()
+        .returning(move |_| Ok(Some(order.clone())));
+
+    let req = UpdateStatusRequest {
+        status: OrderStatus::Shipped,
+        notes: None,
+        tracking_number: Some("JNE-123".to_string()),
+        courier: None,
+        cancellation_reason: None,
+    };
+
+    let result = order::update_status(&repo, order_id, jastiper_id, &Role::Jastiper, req).await;
+    assert!(matches!(result, Err(AppError::UnprocessableEntity(_))));
+}
+
+#[tokio::test]
+async fn cancel_status_sukses() {
+    let titipers_id = Uuid::new_v4();
+    let jastiper_id = Uuid::new_v4();
+    let order_id = Uuid::new_v4();
+
+    let mut repo = MockOrderRepository::new();
+    let order = make_order(order_id, titipers_id, jastiper_id, OrderStatus::Pending);
+    let updated = make_order(order_id, titipers_id, jastiper_id, OrderStatus::Refunding);
+
+    repo.expect_find_by_id()
+        .returning(move |_| Ok(Some(order.clone())));
+    repo.expect_update()
+        .returning(move |_, _, _| Ok(updated.clone()));
+
+    let req = UpdateStatusRequest {
+        status: OrderStatus::Refunding,
+        notes: Some("Dibatalkan".to_string()),
+        tracking_number: None,
+        courier: None,
+        cancellation_reason: Some("Tidak jadi beli".to_string()),
+    };
+
+    let result = order::cancel_status(&repo, order_id, jastiper_id, &Role::Jastiper, req).await;
+    assert!(result.is_ok());
+}
+
+#[tokio::test]
+async fn cancel_status_gagal_order_tidak_ditemukan() {
+    let mut repo = MockOrderRepository::new();
+
+    repo.expect_find_by_id().returning(|_| Ok(None));
+
+    let req = UpdateStatusRequest {
+        status: OrderStatus::Refunding,
+        notes: None,
+        tracking_number: None,
+        courier: None,
+        cancellation_reason: None,
+    };
+
+    let result =
+        order::cancel_status(&repo, Uuid::new_v4(), Uuid::new_v4(), &Role::Titipers, req).await;
+    assert!(matches!(result, Err(AppError::NotFound(_))));
+}
+
+#[tokio::test]
+async fn payment_sukses() {
+    let titipers_id = Uuid::new_v4();
+    let jastiper_id = Uuid::new_v4();
+    let order_id = Uuid::new_v4();
+
+    let mut repo = MockOrderRepository::new();
+    let mut wallet = MockWalletClient::new();
+
+    let order = make_order(order_id, titipers_id, jastiper_id, OrderStatus::Pending);
+    let paid = make_order(order_id, titipers_id, jastiper_id, OrderStatus::Paid);
+
+    repo.expect_find_by_id()
+        .returning(move |_| Ok(Some(order.clone())));
+    repo.expect_update()
+        .returning(move |_, _, _| Ok(paid.clone()));
+
+    wallet.expect_deduct_wallet().returning(|_, _, _, _| Ok(()));
+
+    let result = order::payment(&repo, &wallet, titipers_id, order_id).await;
+    assert!(result.is_ok());
+}
+
+#[tokio::test]
+async fn payment_gagal_bukan_pemilik() {
+    let titipers_id = Uuid::new_v4();
+    let jastiper_id = Uuid::new_v4();
+    let orang_lain = Uuid::new_v4();
+    let order_id = Uuid::new_v4();
+
+    let mut repo = MockOrderRepository::new();
+    let wallet = MockWalletClient::new();
+
+    let order = make_order(order_id, titipers_id, jastiper_id, OrderStatus::Pending);
+
+    repo.expect_find_by_id()
+        .returning(move |_| Ok(Some(order.clone())));
+
+    let result = order::payment(&repo, &wallet, orang_lain, order_id).await;
+    assert!(matches!(result, Err(AppError::Forbidden(_))));
+}
+
+#[tokio::test]
+async fn payment_gagal_status_bukan_pending() {
+    let titipers_id = Uuid::new_v4();
+    let jastiper_id = Uuid::new_v4();
+    let order_id = Uuid::new_v4();
+
+    let mut repo = MockOrderRepository::new();
+    let wallet = MockWalletClient::new();
+
+    let order = make_order(order_id, titipers_id, jastiper_id, OrderStatus::Paid);
+
+    repo.expect_find_by_id()
+        .returning(move |_| Ok(Some(order.clone())));
+
+    let result = order::payment(&repo, &wallet, titipers_id, order_id).await;
+    assert!(matches!(result, Err(AppError::Conflict(_))));
+}
+
+#[tokio::test]
+async fn payment_gagal_deduct_wallet_error() {
+    let titipers_id = Uuid::new_v4();
+    let jastiper_id = Uuid::new_v4();
+    let order_id = Uuid::new_v4();
+
+    let mut repo = MockOrderRepository::new();
+    let mut wallet = MockWalletClient::new();
+
+    let order = make_order(order_id, titipers_id, jastiper_id, OrderStatus::Pending);
+
+    repo.expect_find_by_id()
+        .returning(move |_| Ok(Some(order.clone())));
+
+    wallet
+        .expect_deduct_wallet()
+        .returning(|_, _, _, _| Err(AppError::Internal));
+
+    let result = order::payment(&repo, &wallet, titipers_id, order_id).await;
+    assert!(result.is_err());
+}
+
+#[tokio::test]
+async fn confirm_order_sukses() {
+    let titipers_id = Uuid::new_v4();
+    let jastiper_id = Uuid::new_v4();
+    let order_id = Uuid::new_v4();
+
+    let mut repo = MockOrderRepository::new();
+
+    let order = make_order(order_id, titipers_id, jastiper_id, OrderStatus::Shipped);
+    let completed = make_order(order_id, titipers_id, jastiper_id, OrderStatus::Completed);
+
+    repo.expect_find_by_id()
+        .returning(move |_| Ok(Some(order.clone())));
+    repo.expect_update()
+        .returning(move |_, _, _| Ok(completed.clone()));
+
+    let result = order::confirm_order(&repo, titipers_id, order_id).await;
+    assert!(result.is_ok());
+}
+
+#[tokio::test]
+async fn confirm_order_gagal_bukan_titipers_pemilik() {
+    let titipers_id = Uuid::new_v4();
+    let jastiper_id = Uuid::new_v4();
+    let titipers_lain = Uuid::new_v4();
+    let order_id = Uuid::new_v4();
+
+    let mut repo = MockOrderRepository::new();
+    let order = make_order(order_id, titipers_id, jastiper_id, OrderStatus::Shipped);
+
+    repo.expect_find_by_id()
+        .returning(move |_| Ok(Some(order.clone())));
+
+    let result = order::confirm_order(&repo, titipers_lain, order_id).await;
+    assert!(matches!(result, Err(AppError::Forbidden(_))));
+}
+
+#[tokio::test]
+async fn purchased_sukses() {
+    let titipers_id = Uuid::new_v4();
+    let jastiper_id = Uuid::new_v4();
+    let order_id = Uuid::new_v4();
+
+    let mut repo = MockOrderRepository::new();
+
+    let order = make_order(order_id, titipers_id, jastiper_id, OrderStatus::Paid);
+    let updated = make_order(order_id, titipers_id, jastiper_id, OrderStatus::Purchased);
+
+    repo.expect_find_by_id()
+        .returning(move |_| Ok(Some(order.clone())));
+    repo.expect_update()
+        .returning(move |_, _, _| Ok(updated.clone()));
+
+    let result = order::purchased(&repo, order_id, jastiper_id).await;
+    assert!(result.is_ok());
+}
+
+#[tokio::test]
+async fn purchased_gagal_bukan_jastiper_pemilik() {
+    let titipers_id = Uuid::new_v4();
+    let jastiper_id = Uuid::new_v4();
+    let jastiper_lain = Uuid::new_v4();
+    let order_id = Uuid::new_v4();
+
+    let mut repo = MockOrderRepository::new();
+    let order = make_order(order_id, titipers_id, jastiper_id, OrderStatus::Paid);
+
+    repo.expect_find_by_id()
+        .returning(move |_| Ok(Some(order.clone())));
+
+    let result = order::purchased(&repo, order_id, jastiper_lain).await;
+    assert!(matches!(result, Err(AppError::Forbidden(_))));
+}
+
+#[tokio::test]
+async fn shipped_sukses() {
+    let titipers_id = Uuid::new_v4();
+    let jastiper_id = Uuid::new_v4();
+    let order_id = Uuid::new_v4();
+
+    let mut repo = MockOrderRepository::new();
+
+    let order = make_order(order_id, titipers_id, jastiper_id, OrderStatus::Purchased);
+    let updated = make_order(order_id, titipers_id, jastiper_id, OrderStatus::Shipped);
+
+    repo.expect_find_by_id()
+        .returning(move |_| Ok(Some(order.clone())));
+    repo.expect_update()
+        .returning(move |_, _, _| Ok(updated.clone()));
+
+    let req = ShippedRequest {
+        tracking_number: Some("JNE-999".to_string()),
+        courier: Some("JNE".to_string()),
+    };
+
+    let result = order::shipped(&repo, order_id, jastiper_id, req).await;
+    assert!(result.is_ok());
+}
+
+#[tokio::test]
+async fn shipped_gagal_tanpa_tracking_number() {
+    let titipers_id = Uuid::new_v4();
+    let jastiper_id = Uuid::new_v4();
+    let order_id = Uuid::new_v4();
+
+    let mut repo = MockOrderRepository::new();
+    let order = make_order(order_id, titipers_id, jastiper_id, OrderStatus::Purchased);
+
+    repo.expect_find_by_id()
+        .returning(move |_| Ok(Some(order.clone())));
+
+    let req = ShippedRequest {
+        tracking_number: None,
+        courier: Some("JNE".to_string()),
+    };
+
+    let result = order::shipped(&repo, order_id, jastiper_id, req).await;
+    assert!(matches!(result, Err(AppError::UnprocessableEntity(_))));
+}
+
+#[tokio::test]
+async fn get_order_history_sukses() {
+    let titipers_id = Uuid::new_v4();
+    let jastiper_id = Uuid::new_v4();
+    let order_id = Uuid::new_v4();
+
+    let mut repo = MockOrderRepository::new();
+    let mut history_repo = MockOrderStatusHistoryRepository::new();
+
+    let order = make_order(order_id, titipers_id, jastiper_id, OrderStatus::Pending);
+
+    repo.expect_find_by_id()
+        .returning(move |_| Ok(Some(order.clone())));
+
+    history_repo
+        .expect_get_status_history()
+        .returning(|_| Ok(vec![]));
+
+    let result = order::get_order_history(&repo, &history_repo, order_id, titipers_id).await;
+    assert!(result.is_ok());
+}
+
+#[tokio::test]
+async fn get_order_history_gagal_order_tidak_ditemukan() {
+    let mut repo = MockOrderRepository::new();
+    let history_repo = MockOrderStatusHistoryRepository::new();
+
+    repo.expect_find_by_id().returning(|_| Ok(None));
+
+    let result =
+        order::get_order_history(&repo, &history_repo, Uuid::new_v4(), Uuid::new_v4()).await;
+    assert!(matches!(result, Err(AppError::NotFound(_))));
+}
+
+#[tokio::test]
+async fn get_order_history_gagal_bukan_pemilik() {
+    let titipers_id = Uuid::new_v4();
+    let jastiper_id = Uuid::new_v4();
+    let orang_lain = Uuid::new_v4();
+    let order_id = Uuid::new_v4();
+
+    let mut repo = MockOrderRepository::new();
+    let history_repo = MockOrderStatusHistoryRepository::new();
+
+    let order = make_order(order_id, titipers_id, jastiper_id, OrderStatus::Pending);
+
+    repo.expect_find_by_id()
+        .returning(move |_| Ok(Some(order.clone())));
+
+    let result = order::get_order_history(&repo, &history_repo, order_id, orang_lain).await;
+    assert!(matches!(result, Err(AppError::Forbidden(_))));
+}
+
+#[tokio::test]
+async fn cancel_order_sukses() {
+    let titipers_id = Uuid::new_v4();
+    let jastiper_id = Uuid::new_v4();
+    let order_id = Uuid::new_v4();
+
+    let mut repo = MockOrderRepository::new();
+    let mut inv = MockInventoryClient::new();
+    let mut wallet = MockWalletClient::new();
+
+    let order = make_order(order_id, titipers_id, jastiper_id, OrderStatus::Paid);
+    let mut refunding = make_order(order_id, titipers_id, jastiper_id, OrderStatus::Cancelled);
+    refunding.product_snapshot = json!({ "product_id": order.product_id.to_string() });
+
+    // 🔥 Perbaikan: find_by_id dipanggil 2 kali
+    let order_clone = order.clone();
+    let refunding_clone = refunding.clone();
+
+    let mut call_count = 0;
+    repo.expect_find_by_id().returning(move |_| {
+        call_count += 1;
+        if call_count == 1 {
+            Ok(Some(order_clone.clone())) // pertama: Pending
+        } else {
+            Ok(Some(refunding_clone.clone())) // kedua: Refunding
         }
+    });
 
-        // update_status PAID → PURCHASED oleh Jastiper harus berhasil
-        #[test]
-        fn test_paid_ke_purchased_oleh_jastiper_berhasil() {
-            let mut machine = OrderMachine::from_status(&OrderStatus::Paid);
-            let result = machine.update_status(&Role::Jastiper, &OrderStatus::Purchased);
-            assert!(result.is_ok());
-        }
+    // 🔥 Perbaikan: verifikasi parameter update
+    repo.expect_update()
+        .withf(move |id, status, _params| *id == order_id && status == &OrderStatus::Refunding)
+        .returning(move |_, _, _| Ok(refunding.clone()));
 
-        // update_status PURCHASED → SHIPPED oleh Jastiper harus berhasil
-        #[test]
-        fn test_purchased_ke_shipped_oleh_jastiper_berhasil() {
-            let mut machine = OrderMachine::from_status(&OrderStatus::Purchased);
-            let result = machine.update_status(&Role::Jastiper, &OrderStatus::Shipped);
-            assert!(result.is_ok());
-        }
+    inv.expect_release_stock()
+        .withf(move |pid, oid, qty| {
+            *pid == order.product_id && *oid == order_id && *qty == order.quantity
+        })
+        .returning(|_, _, _| Ok(()));
 
-        // update_status SHIPPED → COMPLETED oleh Titipers harus berhasil
-        #[test]
-        fn test_shipped_ke_completed_oleh_titipers_berhasil() {
-            let mut machine = OrderMachine::from_status(&OrderStatus::Shipped);
-            let result = machine.update_status(&Role::Titipers, &OrderStatus::Completed);
-            assert!(result.is_ok());
-        }
+    wallet
+        .expect_refund_wallet()
+        .withf(move |user_id, oid, amount, _reason| {
+            *user_id == titipers_id && *oid == order_id && *amount == order.total_price
+        })
+        .returning(|_, _, _, _| Ok(()));
 
-        // update_status PENDING → PAID oleh Titipers harus gagal (Forbidden)
-        #[test]
-        fn test_pending_ke_paid_oleh_titipers_gagal() {
-            let mut machine = OrderMachine::from_status(&OrderStatus::Pending);
-            let result = machine.update_status(&Role::Titipers, &OrderStatus::Paid);
-            assert!(result.is_err());
-        }
+    let req = CancelRequest {
+        cancellation_reason: "Tidak jadi beli".to_string(),
+    };
 
-        // update_status COMPLETED tidak bisa diubah lagi
-        #[test]
-        fn test_completed_tidak_bisa_diubah() {
-            let mut machine = OrderMachine::from_status(&OrderStatus::Completed);
-            let result = machine.update_status(&Role::Admin, &OrderStatus::Cancelled);
-            assert!(result.is_err());
-        }
+    let result = order::cancel_order(
+        &repo,
+        &inv,
+        &wallet,
+        order_id,
+        jastiper_id,
+        &Role::Jastiper,
+        req,
+    )
+    .await;
 
-        // update_status CANCELLED tidak bisa diubah lagi
-        #[test]
-        fn test_cancelled_tidak_bisa_diubah() {
-            let mut machine = OrderMachine::from_status(&OrderStatus::Cancelled);
-            let result = machine.update_status(&Role::Admin, &OrderStatus::Paid);
-            assert!(result.is_err());
-        }
-
-        // Shipped harus ada tracking_number dan courier
-        #[test]
-        fn test_shipped_tanpa_tracking_number_gagal() {
-            let req = UpdateStatusRequest {
-                status: OrderStatus::Shipped,
-                notes: None,
-                tracking_number: None, // tidak ada
-                courier: Some("JNE".to_string()),
-                cancellation_reason: None,
-            };
-            // Validasi logic: tracking_number wajib saat SHIPPED
-            assert!(req.tracking_number.is_none());
-        }
-
-        #[test]
-        fn test_shipped_tanpa_courier_gagal() {
-            let req = UpdateStatusRequest {
-                status: OrderStatus::Shipped,
-                notes: None,
-                tracking_number: Some("JNE-123".to_string()),
-                courier: None, // tidak ada
-                cancellation_reason: None,
-            };
-            assert!(req.courier.is_none());
-        }
-
-        // Jastiper tidak bisa update order milik jastiper lain
-        #[test]
-        fn test_jastiper_lain_tidak_bisa_update() {
-            let order_id = Uuid::new_v4();
-            let titipers_id = Uuid::new_v4();
-            let jastiper_id = Uuid::new_v4();
-            let jastiper_lain = Uuid::new_v4();
-            let order = make_order(order_id, titipers_id, jastiper_id, OrderStatus::Paid);
-
-            // Simulasi: jastiper_lain mencoba update → forbidden
-            let forbidden = order.jastiper_id != jastiper_lain;
-            assert!(forbidden);
-        }
+    // 🔥 Perbaikan: tambah debug
+    if let Err(ref e) = result {
+        println!("❌ Error: {:?}", e);
     }
+    assert!(result.is_ok());
+}
 
-    mod cancel_order {
-        use super::*;
-        use crate::models::order_state::OrderMachine;
+#[tokio::test]
+async fn cancel_order_gagal_order_tidak_ditemukan() {
+    let mut repo = MockOrderRepository::new();
+    let inv = MockInventoryClient::new();
+    let wallet = MockWalletClient::new();
 
-        // PENDING bisa di-cancel oleh Jastiper
-        #[test]
-        fn test_pending_bisa_cancel_oleh_jastiper() {
-            let machine = OrderMachine::from_status(&OrderStatus::Pending);
-            let result = machine.cancel(&Role::Jastiper);
-            assert!(result.is_ok());
-        }
+    repo.expect_find_by_id().returning(|_| Ok(None));
 
-        // PENDING bisa di-cancel oleh Admin
-        #[test]
-        fn test_pending_bisa_cancel_oleh_admin() {
-            let machine = OrderMachine::from_status(&OrderStatus::Pending);
-            let result = machine.cancel(&Role::Admin);
-            assert!(result.is_ok());
-        }
+    let req = CancelRequest {
+        cancellation_reason: "Test".to_string(),
+    };
 
-        // PENDING tidak bisa di-cancel oleh Titipers
-        #[test]
-        fn test_pending_tidak_bisa_cancel_oleh_titipers() {
-            let machine = OrderMachine::from_status(&OrderStatus::Pending);
-            let result = machine.cancel(&Role::Titipers);
-            assert!(result.is_err());
-        }
+    let result = order::cancel_order(
+        &repo,
+        &inv,
+        &wallet,
+        Uuid::new_v4(),
+        Uuid::new_v4(),
+        &Role::Titipers,
+        req,
+    )
+    .await;
+    assert!(matches!(result, Err(AppError::NotFound(_))));
+}
 
-        // SHIPPED hanya bisa di-cancel oleh Admin
-        #[test]
-        fn test_shipped_hanya_bisa_cancel_oleh_admin() {
-            let machine = OrderMachine::from_status(&OrderStatus::Shipped);
-            let result_admin = machine.cancel(&Role::Admin);
-            let result_jastiper = machine.cancel(&Role::Jastiper);
-            assert!(result_admin.is_ok());
-            assert!(result_jastiper.is_err());
-        }
+#[tokio::test]
+async fn my_purchases_sukses() {
+    let titipers_id = Uuid::new_v4();
+    let mut repo = MockOrderRepository::new();
 
-        // COMPLETED tidak bisa di-cancel
-        #[test]
-        fn test_completed_tidak_bisa_cancel() {
-            let machine = OrderMachine::from_status(&OrderStatus::Completed);
-            let result = machine.cancel(&Role::Admin);
-            assert!(result.is_err());
-        }
+    repo.expect_find_all().returning(|_, _| Ok((vec![], 0)));
 
-        // REFUNDING tidak bisa di-cancel
-        #[test]
-        fn test_refunding_tidak_bisa_cancel() {
-            let machine = OrderMachine::from_status(&OrderStatus::Refunding);
-            let result = machine.cancel(&Role::Admin);
-            assert!(result.is_err());
-        }
+    let result = order::my_purchases(&repo, titipers_id, make_pagination()).await;
+    assert!(result.is_ok());
+    assert_eq!(result.unwrap().1, 0);
+}
 
-        // CancelRequest harus punya cancellation_reason
-        #[test]
-        fn test_cancel_request_ada_alasan() {
-            let req = CancelRequest {
-                cancellation_reason: "Barang tidak tersedia".to_string(),
-            };
-            assert!(!req.cancellation_reason.is_empty());
-        }
-    }
+#[tokio::test]
+async fn my_purchases_gagal_db_error() {
+    let mut repo = MockOrderRepository::new();
 
-    mod payment {
-        use super::*;
+    repo.expect_find_all()
+        .returning(|_, _| Err(AppError::Internal));
 
-        // Payment hanya bisa jika status PENDING
-        #[test]
-        fn test_payment_hanya_bisa_dari_pending() {
-            let titipers_id = Uuid::new_v4();
-            let order = make_order(
-                Uuid::new_v4(),
-                titipers_id,
-                Uuid::new_v4(),
-                OrderStatus::Paid,
-            );
+    let result = order::my_purchases(&repo, Uuid::new_v4(), make_pagination()).await;
+    assert!(result.is_err());
+}
 
-            // Simulasi: status bukan PENDING → konflik
-            let is_conflict = order.status != OrderStatus::Pending;
-            assert!(is_conflict);
-        }
+#[tokio::test]
+async fn my_sales_sukses() {
+    let jastiper_id = Uuid::new_v4();
+    let mut repo = MockOrderRepository::new();
 
-        // Payment harus ditolak jika bukan pemilik order
-        #[test]
-        fn test_payment_ditolak_jika_bukan_pemilik() {
-            let titipers_id = Uuid::new_v4();
-            let orang_lain = Uuid::new_v4();
-            let order = make_order(
-                Uuid::new_v4(),
-                titipers_id,
-                Uuid::new_v4(),
-                OrderStatus::Pending,
-            );
+    repo.expect_find_all().returning(|_, _| Ok((vec![], 0)));
 
-            let is_forbidden = order.titipers_id != orang_lain;
-            assert!(is_forbidden);
-        }
-    }
+    let result = order::my_sales(&repo, jastiper_id, make_pagination()).await;
+    assert!(result.is_ok());
+}
 
-    mod checkout {
-        use super::*;
+#[tokio::test]
+async fn my_sales_gagal_db_error() {
+    let mut repo = MockOrderRepository::new();
 
-        // Titipers tidak bisa beli produk milik sendiri (jastiper_id == titipers_id)
-        #[test]
-        fn test_titipers_tidak_bisa_beli_produk_sendiri() {
-            let same_id = Uuid::new_v4();
-            // Simulasi: jastiper_id == titipers_id → forbidden
-            let is_forbidden = same_id == same_id;
-            assert!(is_forbidden);
-        }
+    repo.expect_find_all()
+        .returning(|_, _| Err(AppError::Internal));
 
-        // Total price dihitung dengan benar
-        #[test]
-        fn test_total_price_dihitung_benar() {
-            let unit_price: i64 = 25_000;
-            let service_fee: i64 = 2_000;
-            let quantity: i64 = 3;
-            let total = (unit_price + service_fee) * quantity;
-            assert_eq!(total, 81_000);
-        }
-
-        // CreateOrderRequest quantity minimal 1
-        #[test]
-        fn test_quantity_minimal_1() {
-            use validator::Validate;
-            let req = CreateOrderRequest {
-                product_id: Uuid::new_v4(),
-                quantity: 0, // invalid
-                shipping_address: make_shipping_address(),
-                note_to_jastiper: None,
-            };
-            assert!(req.validate().is_err());
-        }
-
-        // note_to_jastiper max 500 karakter
-        #[test]
-        fn test_note_max_500_karakter() {
-            use validator::Validate;
-            let req = CreateOrderRequest {
-                product_id: Uuid::new_v4(),
-                quantity: 1,
-                shipping_address: make_shipping_address(),
-                note_to_jastiper: Some("x".repeat(501)),
-            };
-            assert!(req.validate().is_err());
-        }
-    }
-
-    mod my_orders {
-        use super::*;
-
-        // Filter my_purchases harus set titipers_id
-        #[test]
-        fn test_my_purchases_filter_titipers_id() {
-            use crate::models::filter_pagination::OrderFilter;
-            let titipers_id = Uuid::new_v4();
-            let filter = OrderFilter {
-                titipers_id: Some(titipers_id),
-                ..Default::default()
-            };
-            assert_eq!(filter.titipers_id, Some(titipers_id));
-            assert!(filter.jastiper_id.is_none());
-        }
-
-        // Filter my_sales harus set jastiper_id
-        #[test]
-        fn test_my_sales_filter_jastiper_id() {
-            use crate::models::filter_pagination::OrderFilter;
-            let jastiper_id = Uuid::new_v4();
-            let filter = OrderFilter {
-                jastiper_id: Some(jastiper_id),
-                ..Default::default()
-            };
-            assert_eq!(filter.jastiper_id, Some(jastiper_id));
-            assert!(filter.titipers_id.is_none());
-        }
-
-        // Pagination default: page=1, limit=20
-        #[test]
-        fn test_pagination_default() {
-            let params = PaginationParams::default();
-            let limit = params.limit.unwrap_or(20).min(100);
-            let page = params.page.unwrap_or(1).max(1);
-            assert_eq!(limit, 20);
-            assert_eq!(page, 1);
-        }
-
-        // Pagination limit tidak bisa melebihi 100
-        #[test]
-        fn test_pagination_limit_max_100() {
-            let params = PaginationParams {
-                page: Some(1),
-                limit: Some(999),
-                sort_by: None,
-                order: None,
-            };
-            let limit = params.limit.unwrap_or(20).min(100);
-            assert_eq!(limit, 100);
-        }
-    }
+    let result = order::my_sales(&repo, Uuid::new_v4(), make_pagination()).await;
+    assert!(result.is_err());
 }
