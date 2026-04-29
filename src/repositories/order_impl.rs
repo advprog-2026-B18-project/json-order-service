@@ -30,7 +30,7 @@ impl OrderRepository for PgOrderRepository {
     }
 
     async fn find_by_id(&self, order_id: Uuid) -> crate::error::Result<Option<Order>> {
-        order_repo::find_by_id(&self.pool, order_id).await // ← pool dari self
+        order_repo::find_by_id(&self.pool, order_id).await
     }
 
     async fn create(
@@ -59,5 +59,9 @@ impl OrderRepository for PgOrderRepository {
         params: UpdateOrderParams<'a>,
     ) -> crate::error::Result<Order> {
         order_repo::update(&self.pool, order_id, new_status, params).await
+    }
+
+    async fn delete(&self, order_id: Uuid) -> crate::error::Result<()> {
+        order_repo::delete(&self.pool, order_id).await
     }
 }

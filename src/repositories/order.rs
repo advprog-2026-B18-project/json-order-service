@@ -255,3 +255,13 @@ pub async fn update(
 
     find_by_id(pool, order_id).await?.ok_or(AppError::Internal)
 }
+
+pub async fn delete(pool: &PgPool, order_id: Uuid) -> Result<()> {
+    let (sql, values) = Query::delete()
+        .from_table(OrderIden::Order)
+        .and_where(Expr::col(OrderIden::OrderId).eq(order_id))
+        .build_sqlx(PostgresQueryBuilder);
+
+    sqlx::query_with(&sql, values).execute(pool).await?;
+    Ok(())
+}

@@ -34,4 +34,6 @@ pub trait OrderRepository: Send + Sync {
         new_status: &OrderStatus,
         params: UpdateOrderParams<'a>,
     ) -> Result<Order>;
+
+    async fn delete(&self, order_id: Uuid) -> Result<()>;
 }
