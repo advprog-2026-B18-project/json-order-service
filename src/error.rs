@@ -19,6 +19,10 @@ pub enum AppError {
     #[error("{0}")]
     Unauthorized(String),
 
+    // ── 402 Payment Required ──
+    #[error("Insufficient balance")]
+    InsufficientBalance,
+
     // ── 403 ──
     #[error("{0}")]
     Forbidden(String),
@@ -97,6 +101,10 @@ impl IntoResponse for AppError {
             AppError::Internal => (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 json!({"success":false,"message":"Internal error"}),
+            ),
+            AppError::InsufficientBalance => (
+                StatusCode::PAYMENT_REQUIRED,
+                json!({"success":false,"message":"Insufficient balance"}),
             ),
         };
         (status, Json(body)).into_response()

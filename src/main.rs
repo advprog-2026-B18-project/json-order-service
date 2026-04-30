@@ -4,6 +4,7 @@ mod db;
 mod error;
 pub mod middleware;
 pub mod models;
+pub mod orchestrator;
 pub mod ports;
 pub mod repositories;
 mod routes;
