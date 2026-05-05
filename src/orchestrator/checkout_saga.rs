@@ -8,21 +8,20 @@ use uuid::Uuid;
 use crate::error::AppError;
 use crate::models::order::{CreateOrderRequest, Order, PriceBreakdown};
 use crate::orchestrator::SagaStep;
-use crate::ports::inventory_client::InventoryClient;
-use crate::ports::order_repository::OrderRepository;
-use crate::ports::wallet_client::WalletClient;
+use crate::repositories::order_repository::OrderRepository;
+use crate::services::inventory_client::InventoryClient;
+use crate::services::wallet_client::WalletClient;
 
 // SAGA CHECKOUT
 
 // Flow:
-//   Step 1: ReserveStock       → inventory_client.reserve_stock()
-//   Step 2: CheckWallet        → wallet_client.check_wallet()      (read-only, tidak ada deduct)
-//   Step 3: CreateOrder        → order_repo.create()
+//   Step 1: CheckWallet   → wallet_client.check_wallet()      (read-only, no compensation)
+//   Step 2: CreateOrder   → order_repo.create()               (UUID dari repo)
+//   Step 3: ReserveStock  → inventory_client.reserve_stock()  (pakai order_id dari ctx.created_order)
 
 pub struct CheckoutContext {
     pub titipers_id: Uuid,
     pub jastiper_id: Uuid,
-    pub order_id: Uuid,
     pub req: CreateOrderRequest,
     pub product: Value,
     pub unit_price: i64,
@@ -30,63 +29,13 @@ pub struct CheckoutContext {
     pub total_price: i64,
     pub snapshot: Value,
 
-    // fill while saa running
-    pub stock_reserved: bool,
+    // diisi saat saga berjalan
     pub created_order: Option<Order>,
-}
-
-pub struct ReserveStockStep {
-    pub inventory_client: Arc<dyn InventoryClient>,
-}
-
-#[async_trait]
-impl SagaStep for ReserveStockStep {
-    type Context = CheckoutContext;
-
-    async fn execute(&self, ctx: &mut CheckoutContext) -> Result<(), AppError> {
-        self.inventory_client
-            .reserve_stock(ctx.req.product_id, ctx.order_id, ctx.req.quantity)
-            .await
-            .map_err(|e| {
-                error!("❌ [ReserveStockStep] reserve_stock gagal: {:?}", e);
-                e
-            })?;
-
-        ctx.stock_reserved = true;
-        info!(
-            "✅ [ReserveStockStep] stok berhasil direservasi product_id={} qty={}",
-            ctx.req.product_id, ctx.req.quantity
-        );
-        Ok(())
-    }
-
-    async fn compensate(&self, ctx: &mut CheckoutContext) -> Result<(), AppError> {
-        if !ctx.stock_reserved {
-            return Ok(());
-        }
-        error!(
-            "↩️  [ReserveStockStep] melepas reservasi stok product_id={} order_id={}",
-            ctx.req.product_id, ctx.order_id
-        );
-        self.inventory_client
-            .release_stock(ctx.req.product_id, ctx.order_id, ctx.req.quantity)
-            .await
-            .map_err(|e| {
-                error!("🚨 [ReserveStockStep] release_stock GAGAL: {:?}", e);
-                e
-            })?;
-
-        ctx.stock_reserved = false;
-        Ok(())
-    }
-
-    fn name(&self) -> &'static str {
-        "reserve_stock"
-    }
+    pub stock_reserved: bool,
 }
 
 pub struct CheckWalletStep {
-    pub wallet_client: Arc<dyn WalletClient>,
+    pub wallet_client: Arc<dyn WalletClient + Send + Sync>,
 }
 
 #[async_trait]
@@ -123,7 +72,7 @@ impl SagaStep for CheckWalletStep {
 }
 
 pub struct CreateOrderStep {
-    pub order_repo: Arc<dyn OrderRepository>,
+    pub order_repo: Arc<dyn OrderRepository + Send + Sync>,
 }
 
 #[async_trait]
@@ -177,6 +126,74 @@ impl SagaStep for CreateOrderStep {
     }
 }
 
+pub struct ReserveStockStep {
+    pub inventory_client: Arc<dyn InventoryClient + Send + Sync>,
+}
+
+#[async_trait]
+impl SagaStep for ReserveStockStep {
+    type Context = CheckoutContext;
+
+    async fn execute(&self, ctx: &mut CheckoutContext) -> Result<(), AppError> {
+        let order_id = ctx
+            .created_order
+            .as_ref()
+            .ok_or_else(|| {
+                error!("❌ [ReserveStockStep] created_order belum ada di context");
+                AppError::Internal
+            })?
+            .order_id;
+
+        self.inventory_client
+            .reserve_stock(ctx.req.product_id, order_id, ctx.req.quantity)
+            .await
+            .map_err(|e| {
+                error!("❌ [ReserveStockStep] reserve_stock gagal: {:?}", e);
+                e
+            })?;
+
+        ctx.stock_reserved = true;
+        info!(
+            "✅ [ReserveStockStep] stok berhasil direservasi product_id={} qty={} order_id={}",
+            ctx.req.product_id, ctx.req.quantity, order_id
+        );
+        Ok(())
+    }
+
+    async fn compensate(&self, ctx: &mut CheckoutContext) -> Result<(), AppError> {
+        if !ctx.stock_reserved {
+            return Ok(());
+        }
+
+        let order_id = match ctx.created_order.as_ref() {
+            Some(o) => o.order_id,
+            None => {
+                error!("↩️  [ReserveStockStep] tidak bisa release — created_order tidak ada");
+                return Ok(());
+            }
+        };
+
+        error!(
+            "↩️  [ReserveStockStep] melepas reservasi stok product_id={} order_id={}",
+            ctx.req.product_id, order_id
+        );
+        self.inventory_client
+            .release_stock(ctx.req.product_id, order_id, ctx.req.quantity)
+            .await
+            .map_err(|e| {
+                error!("🚨 [ReserveStockStep] release_stock GAGAL: {:?}", e);
+                e
+            })?;
+
+        ctx.stock_reserved = false;
+        Ok(())
+    }
+
+    fn name(&self) -> &'static str {
+        "reserve_stock"
+    }
+}
+
 // BUILD CONTEXT HELPER
 pub fn build_checkout_context(
     titipers_id: Uuid,
@@ -184,7 +201,6 @@ pub fn build_checkout_context(
     req: CreateOrderRequest,
     product: Value,
 ) -> CheckoutContext {
-    let order_id = Uuid::new_v4();
     let unit_price = product["price"].as_i64().unwrap_or(0);
     let service_fee = product["service_fee"].as_i64().unwrap_or(0);
     let total_price = (unit_price + service_fee) * req.quantity as i64;
@@ -203,14 +219,13 @@ pub fn build_checkout_context(
     CheckoutContext {
         titipers_id,
         jastiper_id,
-        order_id,
         req,
         product,
         unit_price,
         service_fee,
         total_price,
         snapshot,
-        stock_reserved: false,
         created_order: None,
+        stock_reserved: false,
     }
 }

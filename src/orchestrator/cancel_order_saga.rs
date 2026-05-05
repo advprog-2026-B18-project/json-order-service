@@ -9,9 +9,9 @@ use crate::models::order::{Order, UpdateOrderParams};
 use crate::models::order_status_history::OrderStatus;
 use crate::models::role::Role;
 use crate::orchestrator::SagaStep;
-use crate::ports::inventory_client::InventoryClient;
-use crate::ports::order_repository::OrderRepository;
-use crate::ports::wallet_client::WalletClient;
+use crate::repositories::order_repository::OrderRepository;
+use crate::services::inventory_client::InventoryClient;
+use crate::services::wallet_client::WalletClient;
 
 // CANCEL SAGA
 
@@ -21,11 +21,13 @@ use crate::ports::wallet_client::WalletClient;
 //   Step 3: RefundWallet            → wallet_client.refund_wallet() [async]
 
 pub struct CancelOrderContext {
+    // Input
     pub order_id: Uuid,
     pub requester_id: Uuid,
     pub role: Role,
     pub product_id: Uuid,
     pub titipers_id: Uuid,
+    pub status: OrderStatus,
     pub quantity: i32,
     pub total_price: i64,
     pub cancellation_reason: String,
@@ -37,7 +39,7 @@ pub struct CancelOrderContext {
 }
 
 pub struct UpdateStatusToRefundingStep {
-    pub order_repo: Arc<dyn OrderRepository>,
+    pub order_repo: Arc<dyn OrderRepository + Send + Sync>,
 }
 
 #[async_trait]
@@ -131,7 +133,7 @@ impl SagaStep for UpdateStatusToRefundingStep {
 }
 
 pub struct ReleaseStockStep {
-    pub inventory_client: Arc<dyn InventoryClient>,
+    pub inventory_client: Arc<dyn InventoryClient + Send + Sync>,
 }
 
 #[async_trait]
@@ -189,7 +191,7 @@ impl SagaStep for ReleaseStockStep {
 }
 
 pub struct RefundWalletStep {
-    pub wallet_client: Arc<dyn WalletClient>,
+    pub wallet_client: Arc<dyn WalletClient + Send + Sync>,
 }
 
 #[async_trait]
@@ -197,6 +199,14 @@ impl SagaStep for RefundWalletStep {
     type Context = CancelOrderContext;
 
     async fn execute(&self, ctx: &mut CancelOrderContext) -> Result<(), AppError> {
+        if ctx.status == OrderStatus::Pending {
+            info!(
+                "↩️  [RefundWalletStep] skip — order masih PENDING, wallet belum di-deduct order_id={}",
+                ctx.order_id
+            );
+            return Ok(());
+        }
+
         let desc = format!("Refund Order #{} — dibatalkan", ctx.order_id);
 
         self.wallet_client

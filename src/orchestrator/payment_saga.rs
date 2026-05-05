@@ -8,8 +8,8 @@ use crate::error::AppError;
 use crate::models::order::Order;
 use crate::models::order_status_history::OrderStatus;
 use crate::orchestrator::SagaStep;
-use crate::ports::order_repository::OrderRepository;
-use crate::ports::wallet_client::WalletClient;
+use crate::repositories::order_repository::OrderRepository;
+use crate::services::wallet_client::WalletClient;
 
 // PAYMENT SAGA
 
@@ -28,7 +28,7 @@ pub struct PaymentContext {
 }
 
 pub struct UpdateStatusToPaidStep {
-    pub order_repo: Arc<dyn OrderRepository>,
+    pub order_repo: Arc<dyn OrderRepository + Send + Sync>,
 }
 
 #[async_trait]
@@ -110,7 +110,7 @@ impl SagaStep for UpdateStatusToPaidStep {
 }
 
 pub struct DeductWalletStep {
-    pub wallet_client: Arc<dyn WalletClient>,
+    pub wallet_client: Arc<dyn WalletClient + Send + Sync>,
 }
 
 #[async_trait]

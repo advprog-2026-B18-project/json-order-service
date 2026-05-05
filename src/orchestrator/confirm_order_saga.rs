@@ -10,19 +10,22 @@ use crate::models::order::UpdateOrderParams;
 use crate::models::order_status_history::OrderStatus;
 use crate::models::role::Role;
 use crate::orchestrator::SagaStep;
-use crate::ports::order_repository::OrderRepository;
-use crate::ports::wallet_client::WalletClient;
+use crate::repositories::order_repository::OrderRepository;
+use crate::services::inventory_client::InventoryClient;
+use crate::services::wallet_client::WalletClient;
 
 // CONFIRM SAGA
 
 // Flow:
 //   Step 1: UpdateStatusToCompleted
 //   Step 2: TransferEarnings
+//   Step 3: SendConfirmationProduct
 
 pub struct ConfirmOrderContext {
     pub titipers_id: Uuid,
     pub jastiper_id: Uuid,
     pub order_id: Uuid,
+    pub product_id: Uuid,
     pub total_price: i64,
 
     // fill while saga running
@@ -31,7 +34,7 @@ pub struct ConfirmOrderContext {
 }
 
 pub struct UpdateStatusToCompletedStep {
-    pub order_repo: Arc<dyn OrderRepository>,
+    pub order_repo: Arc<dyn OrderRepository + Send + Sync>,
 }
 
 #[async_trait]
@@ -110,7 +113,7 @@ impl SagaStep for UpdateStatusToCompletedStep {
 }
 
 pub struct TransferEarningsStep {
-    pub wallet_client: Arc<dyn WalletClient>,
+    pub wallet_client: Arc<dyn WalletClient + Send + Sync>,
 }
 
 #[async_trait]
@@ -141,14 +144,78 @@ impl SagaStep for TransferEarningsStep {
     }
 
     async fn compensate(&self, ctx: &mut ConfirmOrderContext) -> Result<(), AppError> {
+        if let Some(ref txn_id) = ctx.earnings_transaction_id {
+            error!(
+                "↩️  [TransferEarningsStep] revert earnings jastiper_id={} txn_id={}",
+                ctx.jastiper_id, txn_id
+            );
+
+            self.wallet_client
+            .reverse_earnings(ctx.jastiper_id, ctx.order_id, txn_id, "Revert earnings order ")
+            .await
+            .map_err(|e| {
+                error!(
+                "🚨 [TransferEarningsStep] revert earnings GAGAL jastiper_id={} txn_id={}: {:?}",
+                ctx.jastiper_id, txn_id, e
+            );
+                e
+            })?;
+
+            info!(
+                "✅ [TransferEarningsStep] earnings berhasil direvert jastiper_id={} txn_id={}",
+                ctx.jastiper_id, txn_id
+            );
+        } else {
+            info!(
+                "↩️  [TransferEarningsStep] no-op — transfer belum terjadi order_id={}",
+                ctx.order_id
+            );
+        }
+
+        Ok(())
+    }
+
+    fn name(&self) -> &'static str {
+        "transfer_earnings_to_jastiper"
+    }
+}
+
+pub struct SendConfirmationProductStep {
+    pub inventory_client: Arc<dyn InventoryClient + Send + Sync>,
+}
+
+#[async_trait]
+impl SagaStep for SendConfirmationProductStep {
+    type Context = ConfirmOrderContext;
+
+    async fn execute(&self, ctx: &mut ConfirmOrderContext) -> Result<(), AppError> {
+        self.inventory_client
+            .confirm_order_received(ctx.product_id, ctx.order_id)
+            .await
+            .map_err(|e| {
+                error!(
+                    "❌ [SendConfirmationProductStep] reserve_stock gagal: {:?}",
+                    e
+                );
+                e
+            })?;
+
         info!(
-            "↩️  [TransferEarningsStep] no-op — transfer belum terjadi order_id={}",
+            "✅ [SendConfirmationProductStep] konfirmasi terkirim ke inventory product_id={} order_id={}",
+            ctx.product_id, ctx.order_id
+        );
+        Ok(())
+    }
+
+    async fn compensate(&self, ctx: &mut ConfirmOrderContext) -> Result<(), AppError> {
+        info!(
+            "↩️  [SendConfirmationProductStep] no-op — konfirmasi inventory tidak perlu direvert order_id={}",
             ctx.order_id
         );
         Ok(())
     }
 
     fn name(&self) -> &'static str {
-        "transfer_earnings_to_jastiper"
+        "send_confirmation_product"
     }
 }
