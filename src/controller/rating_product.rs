@@ -25,8 +25,8 @@ pub async fn submit_rating_product(
         .map_err(|e| AppError::Validation(e.to_string()))?;
 
     let rating = svc::submit_rating(
-        state.order_repo.as_ref(),
-        state.rating_product_repo.as_ref(),
+        Arc::clone(&state.order_repo),
+        Arc::clone(&state.rating_product_repo),
         order_id,
         claims.user_id()?,
         req,
@@ -55,8 +55,8 @@ pub async fn get_rating(
     Path(order_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let rating = svc::get_rating(
-        state.order_repo.as_ref(),
-        state.rating_product_repo.as_ref(),
+        Arc::clone(&state.order_repo),
+        Arc::clone(&state.rating_product_repo),
         order_id,
         claims.user_id()?,
     )

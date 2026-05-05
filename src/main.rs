@@ -1,28 +1,14 @@
-mod adapters;
-pub mod controller;
-mod db;
-mod error;
-pub mod middleware;
-pub mod models;
-pub mod orchestrator;
-pub mod ports;
-pub mod repositories;
-mod routes;
-pub mod services;
-mod state;
-#[cfg(test)]
-mod tests;
-
-use crate::adapters::auth_client_impl::HttpAuthClient;
-use crate::adapters::inventory_client_impl::HttpInventoryClient;
-use crate::adapters::wallet_client_impl::HttpWalletClient;
-use crate::repositories::order_impl::PgOrderRepository;
-use crate::repositories::order_status_history_impl::PgOrderStatusHistoryRepository;
-use crate::repositories::rating_jastiper_impl::PgRatingJastiperRepository;
-use crate::repositories::rating_product_impl::PgRatingProductRepository;
-use crate::routes::create_app;
-use crate::state::AppState;
 use axum::Router;
+use json_order_service::db;
+use json_order_service::repositories::adapters::order_adapt::PgOrderRepository;
+use json_order_service::repositories::adapters::order_status_history_adapt::PgOrderStatusHistoryRepository;
+use json_order_service::repositories::adapters::rating_jastiper_adapt::PgRatingJastiperRepository;
+use json_order_service::repositories::adapters::rating_product_adapt::PgRatingProductRepository;
+use json_order_service::routes::create_app;
+use json_order_service::services::adapters::auth_client_adapt::HttpAuthClient;
+use json_order_service::services::adapters::inventory_client_adapt::HttpInventoryClient;
+use json_order_service::services::adapters::wallet_client_adapt::HttpWalletClient;
+use json_order_service::state::AppState;
 use std::sync::Arc;
 
 #[tokio::main]
@@ -35,9 +21,14 @@ async fn main() {
     let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL harus diset di .env");
     let pool = db::create_pool(&database_url).await;
 
+    let order_status_history_repo = Arc::new(PgOrderStatusHistoryRepository::new(pool.clone()));
+
     let state = Arc::new(AppState {
-        order_repo: Arc::new(PgOrderRepository::new(pool.clone())),
-        order_status_history_repo: Arc::new(PgOrderStatusHistoryRepository::new(pool.clone())),
+        order_repo: Arc::new(PgOrderRepository::new(
+            pool.clone(),
+            order_status_history_repo.clone(),
+        )),
+        order_status_history_repo,
         rating_product_repo: Arc::new(PgRatingProductRepository::new(pool.clone())),
         rating_jastiper_repo: Arc::new(PgRatingJastiperRepository::new(pool.clone())),
 
