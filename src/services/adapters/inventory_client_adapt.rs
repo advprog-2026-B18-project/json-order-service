@@ -1,8 +1,8 @@
 use crate::error::AppError;
-use crate::ports::inventory_client::InventoryClient;
-use crate::services::inventory_client::{
-    fetch_product, release_stock, reserve_stock, send_product_rating,
+use crate::services::implements::inventory_client_impl::{
+    confirm_order_received, fetch_product, release_stock, reserve_stock, send_product_rating,
 };
+use crate::services::inventory_client::InventoryClient;
 use async_trait::async_trait;
 use serde_json::Value;
 use uuid::Uuid;
@@ -42,5 +42,13 @@ impl InventoryClient for HttpInventoryClient {
         product_images: Vec<&'a str>,
     ) -> Result<(), AppError> {
         send_product_rating(product_id, order_id, rating, review, product_images).await
+    }
+
+    async fn confirm_order_received(
+        &self,
+        product_id: Uuid,
+        order_id: Uuid,
+    ) -> Result<(), AppError> {
+        confirm_order_received(product_id, order_id).await
     }
 }

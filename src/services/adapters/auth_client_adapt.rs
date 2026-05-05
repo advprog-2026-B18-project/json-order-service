@@ -1,6 +1,6 @@
 use crate::error::AppError;
-use crate::ports::auth_client::AuthClient;
-use crate::services::auth_client::send_jastiper_rating;
+use crate::services::auth_client::AuthClient;
+use crate::services::implements::auth_client_impl::send_jastiper_rating;
 use async_trait::async_trait;
 use uuid::Uuid;
 

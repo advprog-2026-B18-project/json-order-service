@@ -1,26 +1,38 @@
-use serde_json::json;
+use std::sync::Arc;
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
 use crate::error::AppError;
 use crate::models::filter_pagination::{OrderFilter, PaginationParams};
 use crate::models::order::{
-    CancelRequest, CreateOrderRequest, Order, PriceBreakdown, ShippedRequest, UpdateOrderParams,
+    CancelRequest, CreateOrderRequest, Order, ShippedRequest, UpdateOrderParams,
     UpdateStatusRequest,
 };
 use crate::models::order_state::OrderMachine;
 use crate::models::order_status_history::{OrderStatus, OrderStatusHistory};
 use crate::models::role::Role;
-use crate::ports::inventory_client::InventoryClient;
-use crate::ports::order_repository::OrderRepository;
-use crate::ports::order_status_history_repository::OrderStatusHistoryRepository;
-use crate::ports::wallet_client::WalletClient;
+use crate::orchestrator::SagaOrchestrator;
+use crate::orchestrator::cancel_order_saga::{
+    CancelOrderContext, RefundWalletStep, ReleaseStockStep, UpdateStatusToRefundingStep,
+};
+use crate::orchestrator::checkout_saga::{
+    CheckWalletStep, CreateOrderStep, ReserveStockStep, build_checkout_context,
+};
+use crate::orchestrator::confirm_order_saga::{
+    ConfirmOrderContext, SendConfirmationProductStep, TransferEarningsStep,
+    UpdateStatusToCompletedStep,
+};
+use crate::orchestrator::payment_saga::{DeductWalletStep, PaymentContext, UpdateStatusToPaidStep};
+use crate::repositories::order_repository::OrderRepository;
+use crate::repositories::order_status_history_repository::OrderStatusHistoryRepository;
+use crate::services::inventory_client::InventoryClient;
+use crate::services::wallet_client::WalletClient;
 
 // ── checkout ──────────────────────────────────────────────────────
 pub async fn checkout(
-    order_repo: &dyn OrderRepository,
-    inventory_client: &dyn InventoryClient,
-    wallet_client: &dyn WalletClient,
+    order_repo: Arc<dyn OrderRepository + Send + Sync>,
+    inventory_client: Arc<dyn InventoryClient + Send + Sync>,
+    wallet_client: Arc<dyn WalletClient + Send + Sync>,
     titipers_id: Uuid,
     req: CreateOrderRequest,
 ) -> Result<Order, AppError> {
@@ -29,8 +41,7 @@ pub async fn checkout(
         titipers_id, req.product_id, req.quantity
     );
 
-    let order_id = Uuid::new_v4();
-
+    // Validation
     let product = inventory_client
         .fetch_product(req.product_id)
         .await
@@ -39,7 +50,7 @@ pub async fn checkout(
             e
         })?;
 
-    let jastiper_id: Uuid = serde_json::from_value(product["jastiper"]["userId"].clone())
+    let jastiper_id: Uuid = serde_json::from_value(product["jastiper"]["user_id"].clone())
         .map_err(|_| AppError::Internal)?;
 
     if titipers_id == jastiper_id {
@@ -48,69 +59,93 @@ pub async fn checkout(
         ));
     }
 
-    let unit_price = product["price"].as_i64().unwrap_or(0);
-    let service_fee = product["service_fee"].as_i64().unwrap_or(0);
-    let total_price = (unit_price + service_fee) * req.quantity as i64;
+    // Saga step
+    let mut ctx = build_checkout_context(titipers_id, jastiper_id, req, product);
 
-    let snapshot = json!({
-        "product_id":     req.product_id,
-        "name":           product["name"],
-        "description":    product["description"],
-        "image_url":      product["images"][0],
-        "origin_country": product["originCountry"],
-        "purchase_date":  product["purchaseDate"],
-        "unit_price":     unit_price,
-        "service_fee":    service_fee,
+    let saga = SagaOrchestrator::new("checkout")
+        .step(CheckWalletStep {
+            wallet_client: Arc::clone(&wallet_client),
+        })
+        .step(CreateOrderStep {
+            order_repo: Arc::clone(&order_repo),
+        })
+        .step(ReserveStockStep {
+            inventory_client: Arc::clone(&inventory_client),
+        });
+
+    saga.run(&mut ctx).await?;
+
+    let order = ctx
+        .created_order
+        .expect("CreateOrderStep harus mengisi created_order");
+
+    // ── AUTO-CANCEL setelah 15 menit jika masih PENDING ──
+    let order_id = order.order_id;
+    let titipers_id_clone = titipers_id;
+    let repo_clone = Arc::clone(&order_repo);
+    let inventory_clone = Arc::clone(&inventory_client);
+    let wallet_clone = Arc::clone(&wallet_client);
+
+    tokio::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_secs(15 * 60)).await;
+
+        match repo_clone.find_by_id(order_id).await {
+            Ok(Some(o)) if o.status == OrderStatus::Pending => {
+                info!(
+                    "⏰ [checkout] order_id={} timeout 15 menit, auto-cancel",
+                    order_id
+                );
+                let result = cancel_order(
+                    repo_clone,
+                    inventory_clone,
+                    wallet_clone,
+                    order_id,
+                    titipers_id_clone,
+                    &Role::Titipers,
+                    CancelRequest {
+                        cancellation_reason:
+                            "Pembayaran timeout, order otomatis dibatalkan setelah 15 menit"
+                                .to_string(),
+                    },
+                )
+                .await;
+
+                if let Err(e) = result {
+                    error!(
+                        "❌ [checkout] auto-cancel gagal order_id={}: {:?}",
+                        order_id, e
+                    );
+                }
+            }
+            Ok(Some(_)) => {
+                debug!(
+                    "⏰ [checkout] order_id={} sudah tidak PENDING, skip auto-cancel",
+                    order_id
+                );
+            }
+            Ok(None) => {
+                warn!(
+                    "⏰ [checkout] order_id={} tidak ditemukan saat auto-cancel",
+                    order_id
+                );
+            }
+            Err(e) => {
+                error!(
+                    "❌ [checkout] DB error saat auto-cancel order_id={}: {:?}",
+                    order_id, e
+                );
+            }
+        }
     });
+    // ── END AUTO-CANCEL ──
 
-    inventory_client
-        .reserve_stock(req.product_id, order_id, req.quantity)
-        .await
-        .map_err(|e| {
-            error!("❌ [checkout] reserve_stock gagal: {:?}", e);
-            e
-        })?;
-
-    if let Err(e) = wallet_client.check_wallet(titipers_id, total_price).await {
-        error!("❌ [checkout] check_wallet gagal, releasing stock: {:?}", e);
-        let _ = inventory_client
-            .release_stock(req.product_id, order_id, req.quantity)
-            .await;
-        return Err(e);
-    }
-
-    let pid = req.product_id;
-    let qty = req.quantity;
-
-    match order_repo
-        .create(
-            titipers_id,
-            jastiper_id,
-            req,
-            snapshot,
-            PriceBreakdown {
-                unit_price,
-                service_fee,
-                total_price,
-            },
-        )
-        .await
-    {
-        Ok(order) => {
-            info!("✅ [checkout] order created order_id={}", order.order_id);
-            Ok(order)
-        }
-        Err(e) => {
-            error!("❌ [checkout] order create gagal, releasing stock: {:?}", e);
-            let _ = inventory_client.release_stock(pid, order_id, qty).await;
-            Err(e)
-        }
-    }
+    info!("✅ [checkout] selesai order_id={}", order.order_id);
+    Ok(order)
 }
 
 // ── get_order ─────────────────────────────────────────────────────
 pub async fn get_order(
-    order_repo: &dyn OrderRepository,
+    order_repo: Arc<dyn OrderRepository + Send + Sync>,
     order_id: Uuid,
     requester_id: Uuid,
 ) -> Result<Order, AppError> {
@@ -150,7 +185,7 @@ pub async fn get_order(
 
 // ── update_status ─────────────────────────────────────────────────
 pub async fn update_status(
-    order_repo: &dyn OrderRepository,
+    order_repo: Arc<dyn OrderRepository + Send + Sync>,
     order_id: Uuid,
     requester_id: Uuid,
     role: &Role,
@@ -235,7 +270,7 @@ pub async fn update_status(
 
 // ── cancel_status ─────────────────────────────────────────────────
 pub async fn cancel_status(
-    order_repo: &dyn OrderRepository,
+    order_repo: Arc<dyn OrderRepository + Send + Sync>,
     order_id: Uuid,
     requester_id: Uuid,
     role: &Role,
@@ -288,11 +323,17 @@ pub async fn cancel_status(
 
 // ── payment ──────────────────────────────────────────────────────
 pub async fn payment(
-    order_repo: &dyn OrderRepository,
-    wallet_client: &dyn WalletClient,
+    order_repo: Arc<dyn OrderRepository + Send + Sync>,
+    wallet_client: Arc<dyn WalletClient + Send + Sync>,
     titipers_id: Uuid,
     order_id: Uuid,
 ) -> Result<Order, AppError> {
+    info!(
+        "💳 [payment] titipers_id={} order_id={}",
+        titipers_id, order_id
+    );
+
+    // Validation
     let order = order_repo
         .find_by_id(order_id)
         .await?
@@ -309,96 +350,100 @@ pub async fn payment(
         )));
     }
 
-    debug!(
-        "💵 [payment] deduct wallet balance for titipers_id={} amount={}",
-        titipers_id, order.total_price
-    );
-    let desc = format!("Pembayaran Order #{}", order_id);
-    if let Err(e) = wallet_client
-        .deduct_wallet(titipers_id, order_id, order.total_price, &desc)
-        .await
-    {
-        error!("❌ [payment] deduct_wallet gagal: {:?}", e);
-        return Err(e);
-    }
-    info!("✅ [payment] wallet deducted, wallet service sudah menginfirmasi pembayaran");
-
-    let result = update_status(
-        order_repo,
-        order_id,
+    // Saga step
+    let mut ctx = PaymentContext {
         titipers_id,
-        &Role::System,
-        UpdateStatusRequest {
-            status: OrderStatus::Paid,
-            notes: Some("Pembayaran berhasil dilakukan titipers".to_string()),
-            tracking_number: None,
-            courier: None,
-            cancellation_reason: None,
-        },
-    )
-    .await
-    .map_err(|e| {
-        error!("❌ [payment] update_status gagal: {:?}", e);
-        e
-    })?;
+        order_id,
+        total_price: order.total_price,
+        wallet_transaction_id: None,
+        updated_order: None,
+    };
 
+    let saga = SagaOrchestrator::new("payment")
+        .step(DeductWalletStep {
+            wallet_client: Arc::clone(&wallet_client),
+        })
+        .step(UpdateStatusToPaidStep {
+            order_repo: Arc::clone(&order_repo),
+        });
+
+    saga.run(&mut ctx).await?;
+
+    let result = ctx
+        .updated_order
+        .expect("UpdateStatusToPaidStep harus mengisi updated_order");
+    info!("✅ [payment] selesai order_id={}", order_id);
     Ok(result)
 }
 
 // ── confirm_order ──────────────────────f───────────────────────────
 pub async fn confirm_order(
-    order_repo: &dyn OrderRepository,
-    wallet_client: &dyn WalletClient,
+    order_repo: Arc<dyn OrderRepository + Send + Sync>,
+    wallet_client: Arc<dyn WalletClient + Send + Sync>,
+    inventory_client: Arc<dyn InventoryClient + Send + Sync>,
     titipers_id: Uuid,
     order_id: Uuid,
 ) -> Result<Order, AppError> {
+    info!(
+        "✅ [confirm_order] titipers_id={} order_id={}",
+        titipers_id, order_id
+    );
+
+    // Validasi
     let order = order_repo
         .find_by_id(order_id)
         .await
         .map_err(|e| {
-            error!("❌ [get_order] DB error: {:?}", e);
+            error!("❌ [confirm_order] DB error: {:?}", e);
             e
         })?
-        .ok_or_else(|| {
-            warn!("⚠️ [get_order] order not found: {}", order_id);
-            AppError::NotFound("Pesanan tidak ditemukan".to_string())
-        })?;
-
-    let desc = format!("Pendapatan Order #{}", order_id);
-    if let Err(e) = wallet_client
-        .earnings_wallet(order.jastiper_id, order_id, &desc)
-        .await
-    {
-        error!("❌ [payment] earnings_wallet gagal: {:?}", e);
-        return Err(e);
+        .ok_or_else(|| AppError::NotFound("Pesanan tidak ditemukan".to_string()))?;
+    if order.titipers_id != titipers_id {
+        return Err(AppError::Forbidden(
+            "Hanya titipers pemilik order yang dapat mengkonfirmasi".to_string(),
+        ));
     }
-    info!("✅ [payment] wallet earnings, wallet service sudah memberikan pembayaran ke jastiper");
+    if order.status != OrderStatus::Shipped {
+        return Err(AppError::Conflict(format!(
+            "Status harus SHIPPED untuk dikonfirmasi, sekarang {:?}",
+            order.status
+        )));
+    }
 
-    let result = update_status(
-        order_repo,
-        order_id,
+    // Saga step
+    let mut ctx = ConfirmOrderContext {
         titipers_id,
-        &Role::Titipers,
-        UpdateStatusRequest {
-            status: OrderStatus::Completed,
-            notes: Some("Order sudah diterima oleh titipers".to_string()),
-            tracking_number: None,
-            courier: None,
-            cancellation_reason: None,
-        },
-    )
-    .await
-    .map_err(|e| {
-        error!("❌ [confirm] update_status gagal: {:?}", e);
-        e
-    })?;
+        jastiper_id: order.jastiper_id,
+        order_id,
+        product_id: order.product_id,
+        total_price: order.total_price,
+        earnings_transaction_id: None,
+        updated_order: None,
+    };
 
+    let saga = SagaOrchestrator::new("confirm_order")
+        .step(UpdateStatusToCompletedStep {
+            order_repo: Arc::clone(&order_repo),
+        })
+        .step(TransferEarningsStep {
+            wallet_client: Arc::clone(&wallet_client),
+        })
+        .step(SendConfirmationProductStep {
+            inventory_client: Arc::clone(&inventory_client),
+        });
+
+    saga.run(&mut ctx).await?;
+
+    let result = ctx
+        .updated_order
+        .expect("UpdateStatusToCompletedStep harus mengisi updated_order");
+    info!("✅ [confirm_order] selesai order_id={}", order_id);
     Ok(result)
 }
 
 // ── purchased ─────────────────────────────────────────────────────
 pub async fn purchased(
-    order_repo: &dyn OrderRepository,
+    order_repo: Arc<dyn OrderRepository + Send + Sync>,
     order_id: Uuid,
     jastiper_id: Uuid,
 ) -> Result<Order, AppError> {
@@ -426,7 +471,7 @@ pub async fn purchased(
 
 // ── shipped ─────────────────────────────────────────────────────
 pub async fn shipped(
-    order_repo: &dyn OrderRepository,
+    order_repo: Arc<dyn OrderRepository + Send + Sync>,
     order_id: Uuid,
     jastiper_id: Uuid,
     req: ShippedRequest,
@@ -455,8 +500,8 @@ pub async fn shipped(
 
 // ── get_order_history ─────────────────────────────────────────────
 pub async fn get_order_history(
-    order_repo: &dyn OrderRepository,
-    order_status_repo: &dyn OrderStatusHistoryRepository,
+    order_repo: Arc<dyn OrderRepository + Send + Sync>,
+    order_status_repo: Arc<dyn OrderStatusHistoryRepository + Send + Sync>,
     order_id: Uuid,
     requester_id: Uuid,
 ) -> Result<Vec<OrderStatusHistory>, AppError> {
@@ -481,9 +526,9 @@ pub async fn get_order_history(
 
 // ── cancel_order ──────────────────────────────────────────────────
 pub async fn cancel_order(
-    order_repo: &dyn OrderRepository,
-    inventory_client: &dyn InventoryClient,
-    wallet_client: &dyn WalletClient,
+    order_repo: Arc<dyn OrderRepository + Send + Sync>,
+    inventory_client: Arc<dyn InventoryClient + Send + Sync>,
+    wallet_client: Arc<dyn WalletClient + Send + Sync>,
     order_id: Uuid,
     requester_id: Uuid,
     role: &Role,
@@ -494,53 +539,66 @@ pub async fn cancel_order(
         order_id, requester_id, role
     );
 
-    let updated = cancel_status(
-        order_repo,
+    // Validasi
+    let order = order_repo
+        .find_by_id(order_id)
+        .await?
+        .ok_or_else(|| AppError::NotFound("Pesanan tidak ditemukan".to_string()))?;
+
+    match role {
+        Role::Titipers if order.titipers_id != requester_id => {
+            return Err(AppError::Forbidden("Bukan pemilik order".to_string()));
+        }
+        Role::Jastiper if order.jastiper_id != requester_id => {
+            return Err(AppError::Forbidden(
+                "Bukan jastiper pemilik produk".to_string(),
+            ));
+        }
+        _ => {}
+    }
+
+    let product_id: Uuid = serde_json::from_value(order.product_snapshot["product_id"].clone())
+        .unwrap_or(order.product_id);
+
+    // Saga step
+    let mut ctx = CancelOrderContext {
         order_id,
         requester_id,
-        role,
-        UpdateStatusRequest {
-            status: OrderStatus::Refunding,
-            notes: Some(format!("Order dibatalkan oleh {}", role).to_string()),
-            tracking_number: None,
-            courier: None,
-            cancellation_reason: Some(req.cancellation_reason.clone()),
-        },
-    )
-    .await
-    .map_err(|e| {
-        error!("❌ [payment] update_status gagal: {:?}", e);
-        e
-    })?;
-    info!(
-        "✅ [cancel_order] order status updated to REFUNDING, proceeding with stock release and wallet refund"
-    );
+        role: role.clone(),
+        product_id,
+        titipers_id: order.titipers_id,
+        status: order.status,
+        quantity: order.quantity,
+        total_price: order.total_price,
+        cancellation_reason: req.cancellation_reason,
+        status_set_to_refunding: false,
+        stock_released: false,
+        refunding_order: None,
+    };
 
-    let pid: Uuid = serde_json::from_value(updated.product_snapshot["product_id"].clone())
-        .unwrap_or(updated.product_id);
-    debug!(
-        "📦 [cancel_order] releasing stock product_id={} qty={}",
-        pid, updated.quantity
-    );
-    let _ = inventory_client
-        .release_stock(pid, order_id, updated.quantity)
-        .await;
+    let saga = SagaOrchestrator::new("cancel_order")
+        .step(UpdateStatusToRefundingStep {
+            order_repo: Arc::clone(&order_repo),
+        })
+        .step(ReleaseStockStep {
+            inventory_client: Arc::clone(&inventory_client),
+        })
+        .step(RefundWalletStep {
+            wallet_client: Arc::clone(&wallet_client),
+        });
 
-    let rd = format!("Refund Order #{} - dibatalkan", order_id);
-    debug!(
-        "💳 [cancel_order] refunding wallet titipers_id={} amount={}",
-        updated.titipers_id, updated.total_price
-    );
-    let _ = wallet_client
-        .refund_wallet(updated.titipers_id, order_id, updated.total_price, &rd)
-        .await;
+    saga.run(&mut ctx).await?;
 
-    Ok(updated)
+    let result = ctx
+        .refunding_order
+        .expect("UpdateStatusToCancelledStep harus mengisi refunding_order");
+    info!("✅ [cancel_order] selesai order_id={}", order_id);
+    Ok(result)
 }
 
 // ── my_purchases & my_sales ───────────────────────────────────────
 pub async fn my_purchases(
-    order_repo: &dyn OrderRepository,
+    order_repo: Arc<dyn OrderRepository + Send + Sync>,
     titipers_id: Uuid,
     params: PaginationParams,
 ) -> Result<(Vec<Order>, i64), AppError> {
@@ -565,7 +623,7 @@ pub async fn my_purchases(
 }
 
 pub async fn my_sales(
-    order_repo: &dyn OrderRepository,
+    order_repo: Arc<dyn OrderRepository + Send + Sync>,
     jastiper_id: Uuid,
     params: PaginationParams,
 ) -> Result<(Vec<Order>, i64), AppError> {

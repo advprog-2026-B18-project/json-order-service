@@ -1,6 +1,10 @@
 use crate::error::AppError;
-use crate::ports::wallet_client::WalletClient;
-use crate::services::wallet_client::{check_wallet, deduct_wallet, earnings_wallet, refund_wallet};
+use crate::services::implements::wallet_client_impl::{
+    check_wallet, deduct_wallet, earnings_wallet, refund_wallet, reverse_earnings,
+};
+use crate::services::wallet_client::{
+    DeductResponse, EarningsResponse, RefundResponse, WalletClient,
+};
 use async_trait::async_trait;
 use uuid::Uuid;
 
@@ -14,7 +18,7 @@ impl WalletClient for HttpWalletClient {
         order_id: Uuid,
         amount: i64,
         description: &str,
-    ) -> Result<(), AppError> {
+    ) -> Result<DeductResponse, AppError> {
         deduct_wallet(user_id, order_id, amount, description).await
     }
 
@@ -24,7 +28,7 @@ impl WalletClient for HttpWalletClient {
         order_id: Uuid,
         amount: i64,
         description: &str,
-    ) -> Result<(), AppError> {
+    ) -> Result<RefundResponse, AppError> {
         refund_wallet(user_id, order_id, amount, description).await
     }
 
@@ -37,7 +41,17 @@ impl WalletClient for HttpWalletClient {
         jastiper_id: Uuid,
         order_id: Uuid,
         description: &str,
-    ) -> Result<(), AppError> {
+    ) -> Result<EarningsResponse, AppError> {
         earnings_wallet(jastiper_id, order_id, description).await
+    }
+
+    async fn reverse_earnings(
+        &self,
+        jastiper_id: Uuid,
+        order_id: Uuid,
+        transaction_id: &str,
+        description: &str,
+    ) -> Result<(), AppError> {
+        reverse_earnings(jastiper_id, order_id, transaction_id, description).await
     }
 }
