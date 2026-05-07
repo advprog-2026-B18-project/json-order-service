@@ -2,15 +2,16 @@ use crate::error::AppError;
 use crate::models::filter_pagination::{OrderFilter, PaginationParams};
 use crate::models::order::{CancelRequest, Order, OrderStatus, UpdateStatusRequest};
 use crate::models::role::Role;
-use crate::ports::inventory_client::InventoryClient;
-use crate::ports::order_repository::OrderRepository;
-use crate::ports::wallet_client::WalletClient;
+use crate::repositories::order_repository::OrderRepository;
+use crate::services::inventory_client::InventoryClient;
 use crate::services::order::cancel_status;
+use crate::services::wallet_client::WalletClient;
+use std::sync::Arc;
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
 pub async fn get_all(
-    order_repo: &dyn OrderRepository,
+    order_repo: Arc<dyn OrderRepository + Send + Sync>,
     order_filter: &OrderFilter,
     params: &PaginationParams,
     role: &Role,
@@ -31,7 +32,7 @@ pub async fn get_all(
     }
 
     let filter = Some(order_filter);
-    let result = order_repo.find_all(filter, &params).await.map_err(|e| {
+    let result = order_repo.find_all(filter, params).await.map_err(|e| {
         error!("❌ [all_purchases] DB error: {:?}", e);
         e
     })?;
@@ -41,7 +42,7 @@ pub async fn get_all(
 }
 
 pub async fn get_order(
-    order_repo: &dyn OrderRepository,
+    order_repo: Arc<dyn OrderRepository + Send + Sync>,
     order_id: Uuid,
     role: &Role,
 ) -> Result<Order, AppError> {
@@ -77,9 +78,9 @@ pub async fn get_order(
 }
 
 pub async fn force_cancel(
-    order_repo: &dyn OrderRepository,
-    inventory_client: &dyn InventoryClient,
-    wallet_client: &dyn WalletClient,
+    order_repo: Arc<dyn OrderRepository + Send + Sync>,
+    inventory_client: Arc<dyn InventoryClient + Send + Sync>,
+    wallet_client: Arc<dyn WalletClient + Send + Sync>,
     order_id: Uuid,
     requester_id: Uuid,
     role: &Role,

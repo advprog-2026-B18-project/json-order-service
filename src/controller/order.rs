@@ -42,9 +42,9 @@ pub async fn checkout(
     Json(req): Json<CreateOrderRequest>,
 ) -> Result<(StatusCode, Json<serde_json::Value>), AppError> {
     let order = svc::checkout(
-        state.order_repo.as_ref(),
-        state.inventory_client.as_ref(),
-        state.wallet_client.as_ref(),
+        Arc::clone(&state.order_repo),
+        Arc::clone(&state.inventory_client),
+        Arc::clone(&state.wallet_client),
         claims.user_id()?,
         req,
     )
@@ -66,7 +66,7 @@ pub async fn get_order(
     claims: JwtClaims,
     Path(order_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let order = svc::get_order(state.order_repo.as_ref(), order_id, claims.user_id()?).await?;
+    let order = svc::get_order(Arc::clone(&state.order_repo), order_id, claims.user_id()?).await?;
 
     Ok(Json(json!({
         "success": true,
@@ -82,8 +82,8 @@ pub async fn payment(
     Path(order_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let order = svc::payment(
-        state.order_repo.as_ref(),
-        state.wallet_client.as_ref(),
+        Arc::clone(&state.order_repo),
+        Arc::clone(&state.wallet_client),
         claims.user_id()?,
         order_id,
     )
@@ -103,8 +103,9 @@ pub async fn confirm_order(
     Path(order_id): Path<Uuid>,
 ) -> Result<(StatusCode, Json<serde_json::Value>), AppError> {
     let order = svc::confirm_order(
-        state.order_repo.as_ref(),
-        state.wallet_client.as_ref(),
+        Arc::clone(&state.order_repo),
+        Arc::clone(&state.wallet_client),
+        Arc::clone(&state.inventory_client),
         claims.user_id()?,
         order_id,
     )
@@ -130,7 +131,7 @@ pub async fn purchased(
     claims: JwtClaims,
     Path(order_id): Path<Uuid>,
 ) -> Result<(StatusCode, Json<serde_json::Value>), AppError> {
-    let order = svc::purchased(state.order_repo.as_ref(), order_id, claims.user_id()?).await?;
+    let order = svc::purchased(Arc::clone(&state.order_repo), order_id, claims.user_id()?).await?;
 
     Ok((
         StatusCode::OK,
@@ -153,7 +154,13 @@ pub async fn shipped(
     Path(order_id): Path<Uuid>,
     Json(req): Json<ShippedRequest>,
 ) -> Result<(StatusCode, Json<serde_json::Value>), AppError> {
-    let order = svc::shipped(state.order_repo.as_ref(), order_id, claims.user_id()?, req).await?;
+    let order = svc::shipped(
+        Arc::clone(&state.order_repo),
+        order_id,
+        claims.user_id()?,
+        req,
+    )
+    .await?;
 
     Ok((
         StatusCode::OK,
@@ -178,8 +185,8 @@ pub async fn get_order_history(
     Path(order_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let history = svc::get_order_history(
-        state.order_repo.as_ref(),
-        state.order_status_history_repo.as_ref(),
+        Arc::clone(&state.order_repo),
+        Arc::clone(&state.order_status_history_repo),
         order_id,
         claims.user_id()?,
     )
@@ -203,9 +210,9 @@ pub async fn cancel_order(
         .map_err(|e| AppError::Validation(e.to_string()))?;
 
     let order = svc::cancel_order(
-        state.order_repo.as_ref(),
-        state.inventory_client.as_ref(),
-        state.wallet_client.as_ref(),
+        Arc::clone(&state.order_repo),
+        Arc::clone(&state.inventory_client),
+        Arc::clone(&state.wallet_client),
         order_id,
         claims.user_id()?,
         &claims.role()?,
@@ -230,7 +237,7 @@ pub async fn my_purchases(
     let limit = params.limit;
 
     let (orders, total) =
-        svc::my_purchases(state.order_repo.as_ref(), claims.user_id()?, params).await?;
+        svc::my_purchases(Arc::clone(&state.order_repo), claims.user_id()?, params).await?;
 
     Ok(Json(paginated_response(
         "Riwayat belanja ditemukan",
@@ -251,7 +258,7 @@ pub async fn my_sales(
     let limit = params.limit;
 
     let (orders, total) =
-        svc::my_sales(state.order_repo.as_ref(), claims.user_id()?, params).await?;
+        svc::my_sales(Arc::clone(&state.order_repo), claims.user_id()?, params).await?;
 
     Ok(Json(paginated_response(
         "Daftar pesanan masuk ditemukan",

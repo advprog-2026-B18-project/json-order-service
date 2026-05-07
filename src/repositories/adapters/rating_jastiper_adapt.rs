@@ -2,8 +2,8 @@ use async_trait::async_trait;
 use uuid::Uuid;
 
 use crate::models::rating_jastiper::{CreateRatingJastiperRequest, RatingJastiper};
-use crate::ports::rating_jastiper_repository::RatingJastiperRepository;
-use crate::repositories::rating_jastiper as rating_jastiper_repo;
+use crate::repositories::implements::rating_jastiper_repo_impl as rating_jastiper_repo;
+use crate::repositories::rating_jastiper_repository::RatingJastiperRepository;
 
 #[derive(Clone)]
 pub struct PgRatingJastiperRepository {

@@ -4,8 +4,8 @@ use uuid::Uuid;
 use crate::models::order_state::OrderStatus;
 use crate::models::order_status_history::OrderStatusHistory;
 use crate::models::role::Role;
-use crate::ports::order_status_history_repository::OrderStatusHistoryRepository;
-use crate::repositories::order_status_history as order_status_history_repo;
+use crate::repositories::implements::order_status_history_repo_impl as order_status_history_repo;
+use crate::repositories::order_status_history_repository::OrderStatusHistoryRepository;
 
 #[derive(Clone)]
 pub struct PgOrderStatusHistoryRepository {

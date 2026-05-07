@@ -11,7 +11,7 @@ pub(crate) use crate::models::order::{CreateOrderRequest, Order, OrderIden};
 use crate::models::order::{PriceBreakdown, UpdateOrderParams};
 use crate::models::order_state::OrderStatus;
 use crate::models::role::Role;
-use crate::repositories::order_status_history::insert_status_history;
+use crate::repositories::order_status_history_repository::OrderStatusHistoryRepository;
 
 pub async fn find_all(
     pool: &PgPool,
@@ -152,6 +152,7 @@ pub async fn find_by_id(pool: &PgPool, order_id: Uuid) -> Result<Option<Order>> 
 
 pub async fn create(
     pool: &PgPool,
+    order_status_history_repo: &(dyn OrderStatusHistoryRepository + Send + Sync),
     titipers_id: Uuid,
     jastiper_id: Uuid,
     req: CreateOrderRequest,
@@ -199,21 +200,22 @@ pub async fn create(
 
     sqlx::query_with(&sql, values).execute(pool).await?;
 
-    insert_status_history(
-        pool,
-        order_id,
-        &OrderStatus::Pending,
-        &titipers_id.to_string(),
-        &Role::Titipers,
-        Some("Pesanan berhasil dibuat"),
-    )
-    .await?;
+    order_status_history_repo
+        .insert_status_history(
+            order_id,
+            &OrderStatus::Pending,
+            &titipers_id.to_string(),
+            &Role::Titipers,
+            Some("Pesanan berhasil dibuat"),
+        )
+        .await?;
 
     find_by_id(pool, order_id).await?.ok_or(AppError::Internal)
 }
 
 pub async fn update(
     pool: &PgPool,
+    order_status_history_repo: &(dyn OrderStatusHistoryRepository + Send + Sync),
     order_id: Uuid,
     new_status: &OrderStatus,
     params: UpdateOrderParams<'_>,
@@ -243,15 +245,25 @@ pub async fn update(
     let (sql, values) = query.build_sqlx(PostgresQueryBuilder);
     sqlx::query_with(&sql, values).execute(pool).await?;
 
-    insert_status_history(
-        pool,
-        order_id,
-        new_status,
-        params.changed_by,
-        params.actor_role,
-        params.notes,
-    )
-    .await?;
+    order_status_history_repo
+        .insert_status_history(
+            order_id,
+            new_status,
+            params.changed_by,
+            params.actor_role,
+            params.notes,
+        )
+        .await?;
 
     find_by_id(pool, order_id).await?.ok_or(AppError::Internal)
+}
+
+pub async fn delete(pool: &PgPool, order_id: Uuid) -> Result<()> {
+    let (sql, values) = Query::delete()
+        .from_table(OrderIden::Order)
+        .and_where(Expr::col(OrderIden::OrderId).eq(order_id))
+        .build_sqlx(PostgresQueryBuilder);
+
+    sqlx::query_with(&sql, values).execute(pool).await?;
+    Ok(())
 }

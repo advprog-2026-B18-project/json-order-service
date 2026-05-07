@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 use validator::Validate;
@@ -5,13 +6,13 @@ use validator::Validate;
 use crate::error::AppError;
 use crate::models::order_state::OrderStatus;
 use crate::models::rating_jastiper::{CreateRatingJastiperRequest, RatingJastiper};
-use crate::ports::order_repository::OrderRepository;
-use crate::ports::rating_jastiper_repository::RatingJastiperRepository;
-use crate::services::auth_client::send_jastiper_rating;
+use crate::repositories::order_repository::OrderRepository;
+use crate::repositories::rating_jastiper_repository::RatingJastiperRepository;
+use crate::services::implements::auth_client_impl::send_jastiper_rating;
 
 pub async fn submit_rating_jastiper(
-    order_repo: &dyn OrderRepository,
-    rating_jastiper_repo: &dyn RatingJastiperRepository,
+    order_repo: Arc<dyn OrderRepository + Send + Sync>,
+    rating_jastiper_repo: Arc<dyn RatingJastiperRepository + Send + Sync>,
     order_id: Uuid,
     titipers_id: Uuid,
     req: CreateRatingJastiperRequest,
@@ -110,8 +111,8 @@ pub async fn submit_rating_jastiper(
 }
 
 pub async fn get_rating(
-    order_repo: &dyn OrderRepository,
-    rating_jastiper_repo: &dyn RatingJastiperRepository,
+    order_repo: Arc<dyn OrderRepository + Send + Sync>,
+    rating_jastiper_repo: Arc<dyn RatingJastiperRepository + Send + Sync>,
     order_id: Uuid,
     requester_id: Uuid,
 ) -> Result<RatingJastiper, AppError> {

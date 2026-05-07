@@ -2,14 +2,26 @@
 mod tests {
     use serde_json::json;
     use sqlx::PgPool;
+    use std::sync::Arc;
     use uuid::Uuid;
 
     use crate::models::order::{CreateOrderRequest, PriceBreakdown, ShippingAddress};
     use crate::models::order_state::OrderStatus;
     use crate::models::role::Role;
-    use crate::repositories::{order, order_status_history};
+    use crate::repositories::adapters::order_adapt::PgOrderRepository;
+    use crate::repositories::adapters::order_status_history_adapt::PgOrderStatusHistoryRepository;
+    use crate::repositories::order_repository::OrderRepository;
+    use crate::repositories::order_status_history_repository::OrderStatusHistoryRepository;
 
-    async fn create_dummy_order(pool: &PgPool) -> (Uuid, order::Order) {
+    fn build_repos(pool: PgPool) -> (PgOrderRepository, Arc<PgOrderStatusHistoryRepository>) {
+        let history_repo = Arc::new(PgOrderStatusHistoryRepository::new(pool.clone()));
+        let order_repo = PgOrderRepository::new(pool, history_repo.clone());
+        (order_repo, history_repo)
+    }
+
+    async fn create_dummy_order(
+        order_repo: &PgOrderRepository,
+    ) -> (Uuid, crate::models::order::Order) {
         let titipers_id = Uuid::new_v4();
         let jastiper_id = Uuid::new_v4();
 
@@ -41,88 +53,93 @@ mod tests {
             "service_fee": 50_000
         });
 
-        let created = order::create(
-            pool,
-            titipers_id,
-            jastiper_id,
-            req,
-            snapshot,
-            PriceBreakdown {
-                unit_price: 10_000,
-                service_fee: 1_000,
-                total_price: 11_000,
-            },
-        )
-        .await
-        .expect("Gagal membuat dummy order");
+        let created = order_repo
+            .create(
+                titipers_id,
+                jastiper_id,
+                req,
+                snapshot,
+                PriceBreakdown {
+                    unit_price: 10_000,
+                    service_fee: 1_000,
+                    total_price: 11_000,
+                },
+            )
+            .await
+            .expect("Gagal membuat dummy order");
 
         (titipers_id, created)
     }
 
     #[sqlx::test(migrations = "./migrations")]
     async fn test_insert_berhasil(pool: PgPool) {
-        let (titipers_id, order) = create_dummy_order(&pool).await;
+        let (order_repo, history_repo) = build_repos(pool);
+        let (titipers_id, order) = create_dummy_order(&order_repo).await;
 
-        let result = order_status_history::insert_status_history(
-            &pool,
-            order.order_id,
-            &OrderStatus::Paid,
-            &titipers_id.to_string(),
-            &Role::Titipers,
-            Some("Pembayaran berhasil"),
-        )
-        .await;
+        let result = history_repo
+            .insert_status_history(
+                order.order_id,
+                &OrderStatus::Paid,
+                &titipers_id.to_string(),
+                &Role::Titipers,
+                Some("Pembayaran berhasil"),
+            )
+            .await;
 
         assert!(result.is_ok());
     }
 
     #[sqlx::test(migrations = "./migrations")]
     async fn test_insert_tanpa_notes(pool: PgPool) {
-        let (titipers_id, order) = create_dummy_order(&pool).await;
+        let (order_repo, history_repo) = build_repos(pool);
+        let (titipers_id, order) = create_dummy_order(&order_repo).await;
 
-        let result = order_status_history::insert_status_history(
-            &pool,
-            order.order_id,
-            &OrderStatus::Paid,
-            &titipers_id.to_string(),
-            &Role::Titipers,
-            None,
-        )
-        .await;
+        let result = history_repo
+            .insert_status_history(
+                order.order_id,
+                &OrderStatus::Paid,
+                &titipers_id.to_string(),
+                &Role::Titipers,
+                None,
+            )
+            .await;
 
         assert!(result.is_ok());
     }
 
     #[sqlx::test(migrations = "./migrations")]
     async fn test_get_history_urutan_asc(pool: PgPool) {
-        let (titipers_id, order) = create_dummy_order(&pool).await;
+        let (order_repo, history_repo) = build_repos(pool);
+        let (titipers_id, order) = create_dummy_order(&order_repo).await;
 
-        order_status_history::insert_status_history(
-            &pool,
-            order.order_id,
-            &OrderStatus::Paid,
-            &titipers_id.to_string(),
-            &Role::Titipers,
-            Some("Lunas"),
-        )
-        .await
-        .unwrap();
+        history_repo
+            .insert_status_history(
+                order.order_id,
+                &OrderStatus::Paid,
+                &titipers_id.to_string(),
+                &Role::Titipers,
+                Some("Lunas"),
+            )
+            .await
+            .unwrap();
 
-        order_status_history::insert_status_history(
-            &pool,
-            order.order_id,
-            &OrderStatus::Completed,
-            &titipers_id.to_string(),
-            &Role::Titipers,
-            Some("Selesai"),
-        )
-        .await
-        .unwrap();
+        history_repo
+            .insert_status_history(
+                order.order_id,
+                &OrderStatus::Completed,
+                &titipers_id.to_string(),
+                &Role::Titipers,
+                Some("Selesai"),
+            )
+            .await
+            .unwrap();
 
-        let history = order_status_history::get_status_history(&pool, order.order_id)
+        let history = history_repo
+            .get_status_history(order.order_id)
             .await
             .expect("Query gagal");
 
+        // 1 dari create (Pending) + 2 insert manual = 3
         assert_eq!(history.len(), 3);
 
         for i in 1..history.len() {
@@ -135,7 +152,10 @@ mod tests {
 
     #[sqlx::test(migrations = "./migrations")]
     async fn test_get_history_order_tidak_ada(pool: PgPool) {
-        let history = order_status_history::get_status_history(&pool, Uuid::new_v4())
+        let (_, history_repo) = build_repos(pool);
+
+        let history = history_repo
+            .get_status_history(Uuid::new_v4())
             .await
             .expect("Query gagal");
 
@@ -144,21 +164,23 @@ mod tests {
 
     #[sqlx::test(migrations = "./migrations")]
     async fn test_get_history_tidak_tercampur_antar_order(pool: PgPool) {
-        let (titipers_id, order_a) = create_dummy_order(&pool).await;
-        let (_, order_b) = create_dummy_order(&pool).await;
+        let (order_repo, history_repo) = build_repos(pool);
+        let (titipers_id, order_a) = create_dummy_order(&order_repo).await;
+        let (_, order_b) = create_dummy_order(&order_repo).await;
 
-        order_status_history::insert_status_history(
-            &pool,
-            order_b.order_id,
-            &OrderStatus::Paid,
-            &titipers_id.to_string(),
-            &Role::Titipers,
-            None,
-        )
-        .await
-        .unwrap();
+        history_repo
+            .insert_status_history(
+                order_b.order_id,
+                &OrderStatus::Paid,
+                &titipers_id.to_string(),
+                &Role::Titipers,
+                None,
+            )
+            .await
+            .unwrap();
 
-        let history_a = order_status_history::get_status_history(&pool, order_a.order_id)
+        let history_a = history_repo
+            .get_status_history(order_a.order_id)
             .await
             .expect("Query gagal");
 
@@ -170,20 +192,22 @@ mod tests {
 
     #[sqlx::test(migrations = "./migrations")]
     async fn test_get_history_changed_by_dan_actor_role_tersimpan(pool: PgPool) {
-        let (_, order) = create_dummy_order(&pool).await;
+        let (order_repo, history_repo) = build_repos(pool);
+        let (_, order) = create_dummy_order(&order_repo).await;
 
-        order_status_history::insert_status_history(
-            &pool,
-            order.order_id,
-            &OrderStatus::Paid,
-            "admin-user-123",
-            &Role::Admin,
-            Some("Di-approve admin"),
-        )
-        .await
-        .unwrap();
+        history_repo
+            .insert_status_history(
+                order.order_id,
+                &OrderStatus::Paid,
+                "admin-user-123",
+                &Role::Admin,
+                Some("Di-approve admin"),
+            )
+            .await
+            .unwrap();
 
-        let history = order_status_history::get_status_history(&pool, order.order_id)
+        let history = history_repo
+            .get_status_history(order.order_id)
             .await
             .unwrap();
 

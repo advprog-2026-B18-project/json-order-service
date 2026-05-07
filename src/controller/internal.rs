@@ -20,7 +20,8 @@ pub async fn payment_info(
 ) -> Result<Json<serde_json::Value>, AppError> {
     validate_service_key(&headers)?;
 
-    let order = order_internal_svc::get_order_internal(state.order_repo.as_ref(), order_id).await?;
+    let order =
+        order_internal_svc::get_order_internal(Arc::clone(&state.order_repo), order_id).await?;
 
     Ok(Json(json!({
         "success": true,
@@ -46,7 +47,7 @@ pub async fn payment_confirmed(
     validate_service_key(&headers)?;
 
     let order =
-        order_internal_svc::payment_confirmed(state.order_repo.as_ref(), order_id, req).await?;
+        order_internal_svc::payment_confirmed(Arc::clone(&state.order_repo), order_id, req).await?;
 
     Ok(Json(json!({
         "success": true,
@@ -68,7 +69,7 @@ pub async fn refund_confirmed(
     validate_service_key(&headers)?;
 
     let order =
-        order_internal_svc::refund_confirmed(state.order_repo.as_ref(), order_id, req).await?;
+        order_internal_svc::refund_confirmed(Arc::clone(&state.order_repo), order_id, req).await?;
 
     Ok(Json(json!({
         "success": true,

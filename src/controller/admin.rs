@@ -18,7 +18,7 @@ pub async fn get_all(
     Query(params): Query<OrderQueryParams>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let (orders, total) = crate::services::admin::get_all(
-        state.order_repo.as_ref(),
+        Arc::clone(&state.order_repo),
         &params.filter,
         &params.pagination,
         &claims.role()?,
@@ -41,7 +41,7 @@ pub async fn get_order(
     Path(order_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let order =
-        crate::services::admin::get_order(state.order_repo.as_ref(), order_id, &claims.role()?)
+        crate::services::admin::get_order(Arc::clone(&state.order_repo), order_id, &claims.role()?)
             .await?;
 
     Ok(Json(json!({
@@ -62,9 +62,9 @@ pub async fn force_cancel(
         .map_err(|e| AppError::Validation(e.to_string()))?;
 
     let order = crate::services::admin::force_cancel(
-        state.order_repo.as_ref(),
-        state.inventory_client.as_ref(),
-        state.wallet_client.as_ref(),
+        Arc::clone(&state.order_repo),
+        Arc::clone(&state.inventory_client),
+        Arc::clone(&state.wallet_client),
         order_id,
         claims.user_id()?,
         &claims.role()?,

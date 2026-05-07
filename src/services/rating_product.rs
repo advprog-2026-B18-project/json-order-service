@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 use validator::Validate;
@@ -5,13 +6,13 @@ use validator::Validate;
 use crate::error::AppError;
 use crate::models::order_status_history::OrderStatus;
 use crate::models::rating_product::{CreateRatingProductRequest, RatingProduct};
-use crate::ports::order_repository::OrderRepository;
-use crate::ports::rating_product_repository::RatingProductRepository;
-use crate::services::inventory_client::send_product_rating;
+use crate::repositories::order_repository::OrderRepository;
+use crate::repositories::rating_product_repository::RatingProductRepository;
+use crate::services::implements::inventory_client_impl::send_product_rating;
 
 pub async fn submit_rating(
-    order_repo: &dyn OrderRepository,
-    rating_product_repo: &dyn RatingProductRepository,
+    order_repo: Arc<dyn OrderRepository + Send + Sync>,
+    rating_product_repo: Arc<dyn RatingProductRepository + Send + Sync>,
     order_id: Uuid,
     titipers_id: Uuid,
     req: CreateRatingProductRequest,
@@ -116,8 +117,8 @@ pub async fn submit_rating(
 }
 
 pub async fn get_rating(
-    order_repo: &dyn OrderRepository,
-    rating_product_repo: &dyn RatingProductRepository,
+    order_repo: Arc<dyn OrderRepository + Send + Sync>,
+    rating_product_repo: Arc<dyn RatingProductRepository + Send + Sync>,
     order_id: Uuid,
     requester_id: Uuid,
 ) -> Result<RatingProduct, AppError> {
