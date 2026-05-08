@@ -4,7 +4,7 @@ use serde_json::json;
 use uuid::Uuid;
 
 use crate::error::AppError;
-use crate::models::filter_pagination::PaginationParams;
+use crate::models::filter_pagination::{OrderQueryParams, PaginationParams};
 use crate::models::order::{
     CancelRequest, CreateOrderRequest, Order, ShippedRequest, UpdateStatusRequest,
 };
@@ -66,12 +66,14 @@ fn make_create_request(product_id: Uuid) -> CreateOrderRequest {
     }
 }
 
-fn make_pagination() -> PaginationParams {
-    PaginationParams {
-        page: Some(1),
-        limit: Some(10),
-        sort_by: None,
-        order: None,
+fn make_order_query_params() -> OrderQueryParams {
+    OrderQueryParams {
+        pagination: PaginationParams {
+            page: Some(1),
+            limit: Some(10),
+            ..Default::default()
+        },
+        ..Default::default()
     }
 }
 
@@ -1087,7 +1089,7 @@ async fn my_purchases_sukses() {
     let mut repo = MockOrderRepository::new();
     repo.expect_find_all().returning(|_, _| Ok((vec![], 0)));
 
-    let result = order::my_purchases(Arc::new(repo), titipers_id, make_pagination()).await;
+    let result = order::my_purchases(Arc::new(repo), titipers_id, make_order_query_params()).await;
     assert!(result.is_ok());
     assert_eq!(result.unwrap().1, 0);
 }
@@ -1098,7 +1100,7 @@ async fn my_purchases_gagal_db_error() {
     repo.expect_find_all()
         .returning(|_, _| Err(AppError::Internal));
 
-    let result = order::my_purchases(Arc::new(repo), Uuid::new_v4(), make_pagination()).await;
+    let result = order::my_purchases(Arc::new(repo), Uuid::new_v4(), make_order_query_params()).await;
     assert!(result.is_err());
 }
 
@@ -1108,7 +1110,7 @@ async fn my_sales_sukses() {
     let mut repo = MockOrderRepository::new();
     repo.expect_find_all().returning(|_, _| Ok((vec![], 0)));
 
-    let result = order::my_sales(Arc::new(repo), jastiper_id, make_pagination()).await;
+    let result = order::my_sales(Arc::new(repo), jastiper_id, make_order_query_params()).await;
     assert!(result.is_ok());
 }
 
@@ -1118,6 +1120,6 @@ async fn my_sales_gagal_db_error() {
     repo.expect_find_all()
         .returning(|_, _| Err(AppError::Internal));
 
-    let result = order::my_sales(Arc::new(repo), Uuid::new_v4(), make_pagination()).await;
+    let result = order::my_sales(Arc::new(repo), Uuid::new_v4(), make_order_query_params()).await;
     assert!(result.is_err());
 }

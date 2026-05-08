@@ -3,7 +3,7 @@ use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
 use crate::error::AppError;
-use crate::models::filter_pagination::{OrderFilter, PaginationParams};
+use crate::models::filter_pagination::{OrderFilter, OrderQueryParams, PaginationParams};
 use crate::models::order::{
     CancelRequest, CreateOrderRequest, Order, ShippedRequest, UpdateOrderParams,
     UpdateStatusRequest,
@@ -600,20 +600,23 @@ pub async fn cancel_order(
 pub async fn my_purchases(
     order_repo: Arc<dyn OrderRepository + Send + Sync>,
     titipers_id: Uuid,
-    params: PaginationParams,
+    params: OrderQueryParams,
 ) -> Result<(Vec<Order>, i64), AppError> {
     debug!(
         "📋 [my_purchases] titipers_id={} page={:?} limit={:?}",
-        titipers_id, params.page, params.limit
+        titipers_id, params.pagination.page, params.pagination.limit
     );
 
     let order_filter = OrderFilter {
         titipers_id: Some(titipers_id),
+        status: params.filter.status,
+        date_from: params.filter.date_from,
+        date_to: params.filter.date_to,
         ..Default::default()
     };
     let filter = Some(&order_filter);
 
-    let result = order_repo.find_all(filter, &params).await.map_err(|e| {
+    let result = order_repo.find_all(filter, &params.pagination).await.map_err(|e| {
         error!("❌ [my_purchases] DB error: {:?}", e);
         e
     })?;
@@ -625,20 +628,23 @@ pub async fn my_purchases(
 pub async fn my_sales(
     order_repo: Arc<dyn OrderRepository + Send + Sync>,
     jastiper_id: Uuid,
-    params: PaginationParams,
+    params: OrderQueryParams,
 ) -> Result<(Vec<Order>, i64), AppError> {
     debug!(
         "📋 [my_sales] jastiper_id={} page={:?} limit={:?}",
-        jastiper_id, params.page, params.limit
+        jastiper_id, params.pagination.page, params.pagination.limit
     );
 
     let order_filter = OrderFilter {
         jastiper_id: Some(jastiper_id),
+        status: params.filter.status,
+        date_from: params.filter.date_from,
+        date_to: params.filter.date_to,
         ..Default::default()
     };
     let filter = Some(&order_filter);
 
-    let result = order_repo.find_all(filter, &params).await.map_err(|e| {
+    let result = order_repo.find_all(filter, &params.pagination).await.map_err(|e| {
         error!("❌ [my_sales] DB error: {:?}", e);
         e
     })?;
