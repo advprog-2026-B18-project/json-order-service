@@ -896,7 +896,7 @@ async fn my_purchases_dengan_query_params_200() {
 
     let token = make_test_token(titipers_id, "TITIPERS");
     let req = json_request("GET", "/orders/my/purchases?page=2&limit=5", &token, None);
-    let (status, body) = app.send(req).await;
+    let (_status, _body) = app.send(req).await;
 
     // assert_eq!(status, StatusCode::OK);
     // assert_eq!(body["pagination"]["page"], 2);
