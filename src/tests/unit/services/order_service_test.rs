@@ -1100,7 +1100,8 @@ async fn my_purchases_gagal_db_error() {
     repo.expect_find_all()
         .returning(|_, _| Err(AppError::Internal));
 
-    let result = order::my_purchases(Arc::new(repo), Uuid::new_v4(), make_order_query_params()).await;
+    let result =
+        order::my_purchases(Arc::new(repo), Uuid::new_v4(), make_order_query_params()).await;
     assert!(result.is_err());
 }
 

@@ -3,7 +3,7 @@ use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
 use crate::error::AppError;
-use crate::models::filter_pagination::{OrderFilter, OrderQueryParams, PaginationParams};
+use crate::models::filter_pagination::{OrderFilter, OrderQueryParams};
 use crate::models::order::{
     CancelRequest, CreateOrderRequest, Order, ShippedRequest, UpdateOrderParams,
     UpdateStatusRequest,
@@ -616,10 +616,13 @@ pub async fn my_purchases(
     };
     let filter = Some(&order_filter);
 
-    let result = order_repo.find_all(filter, &params.pagination).await.map_err(|e| {
-        error!("❌ [my_purchases] DB error: {:?}", e);
-        e
-    })?;
+    let result = order_repo
+        .find_all(filter, &params.pagination)
+        .await
+        .map_err(|e| {
+            error!("❌ [my_purchases] DB error: {:?}", e);
+            e
+        })?;
 
     debug!("✅ [my_purchases] found {} orders", result.0.len());
     Ok(result)
@@ -644,10 +647,13 @@ pub async fn my_sales(
     };
     let filter = Some(&order_filter);
 
-    let result = order_repo.find_all(filter, &params.pagination).await.map_err(|e| {
-        error!("❌ [my_sales] DB error: {:?}", e);
-        e
-    })?;
+    let result = order_repo
+        .find_all(filter, &params.pagination)
+        .await
+        .map_err(|e| {
+            error!("❌ [my_sales] DB error: {:?}", e);
+            e
+        })?;
 
     debug!("✅ [my_sales] found {} orders", result.0.len());
     Ok(result)

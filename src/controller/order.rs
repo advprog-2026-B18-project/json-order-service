@@ -10,7 +10,7 @@ use validator::Validate;
 
 use crate::error::AppError;
 use crate::middleware::auth::JwtClaims;
-use crate::models::filter_pagination::{OrderQueryParams, PaginationParams};
+use crate::models::filter_pagination::{OrderQueryParams};
 use crate::models::order::{CancelRequest, CreateOrderRequest, ShippedRequest};
 use crate::services::order as svc;
 use crate::state::AppState;
