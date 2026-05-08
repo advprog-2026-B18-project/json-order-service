@@ -13,15 +13,7 @@ use crate::repositories::order_repository::OrderRepository;
 use crate::services::inventory_client::InventoryClient;
 use crate::services::wallet_client::WalletClient;
 
-// CANCEL SAGA
-
-// Flow:
-//   Step 1: UpdateStatusToRefunding → order_repo.update(status=REFUNDING)
-//   Step 2: ReleaseStock            → inventory_client.release_stock()
-//   Step 3: RefundWallet            → wallet_client.refund_wallet() [async]
-
 pub struct CancelOrderContext {
-    // Input
     pub order_id: Uuid,
     pub requester_id: Uuid,
     pub role: Role,
@@ -32,7 +24,6 @@ pub struct CancelOrderContext {
     pub total_price: i64,
     pub cancellation_reason: String,
 
-    // fill while saga running
     pub status_set_to_refunding: bool,
     pub stock_released: bool,
     pub refunding_order: Option<Order>,
