@@ -895,13 +895,7 @@ async fn my_purchases_dengan_query_params_200() {
     ));
 
     let token = make_test_token(titipers_id, "TITIPERS");
-
-    // **Perbaikan:** Kirim query params sebagai struct atau sebagai integer
-    let req = request::get("/orders/my/purchases")
-        .header("Authorization", format!("Bearer {}", token))
-        .query(&[("page", 2), ("limit", 5)]) // ← integer, bukan string
-        .build();
-
+    let req = json_request("GET", "/orders/my/purchases?page=2&limit=5", &token, None);
     let (status, body) = app.send(req).await;
 
     // assert_eq!(status, StatusCode::OK);
