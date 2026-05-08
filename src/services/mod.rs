@@ -1,5 +1,8 @@
-pub(crate) mod auth_client;
+pub mod adapters;
+pub mod admin;
+pub mod auth_client;
 pub mod http_client;
+pub mod implements;
 pub mod inventory_client;
 pub mod order;
 pub mod order_internal;

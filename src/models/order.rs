@@ -57,7 +57,7 @@ pub struct Order {
     pub updated_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Deserialize, ToSchema, Validate)]
+#[derive(Debug, Deserialize, ToSchema, Validate, Clone)]
 pub struct CreateOrderRequest {
     pub product_id: Uuid,
     #[validate(range(min = 1))]

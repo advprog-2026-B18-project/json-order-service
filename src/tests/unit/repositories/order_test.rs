@@ -2,6 +2,7 @@
 mod tests {
     use serde_json::json;
     use sqlx::PgPool;
+    use std::sync::Arc;
     use uuid::Uuid;
 
     use crate::models::filter_pagination::{OrderFilter, PaginationParams};
@@ -10,9 +11,18 @@ mod tests {
     };
     use crate::models::order_state::OrderStatus;
     use crate::models::role::Role;
-    use crate::repositories::order;
+    use crate::repositories::adapters::order_adapt::PgOrderRepository;
+    use crate::repositories::adapters::order_status_history_adapt::PgOrderStatusHistoryRepository;
+    use crate::repositories::order_repository::OrderRepository;
 
-    async fn create_dummy_order(pool: &PgPool) -> (Uuid, Uuid, order::Order) {
+    fn build_order_repo(pool: PgPool) -> PgOrderRepository {
+        let history_repo = Arc::new(PgOrderStatusHistoryRepository::new(pool.clone()));
+        PgOrderRepository::new(pool, history_repo)
+    }
+
+    async fn create_dummy_order(
+        repo: &PgOrderRepository,
+    ) -> (Uuid, Uuid, crate::models::order::Order) {
         let titipers_id = Uuid::new_v4();
         let jastiper_id = Uuid::new_v4();
 
@@ -44,27 +54,28 @@ mod tests {
             "service_fee": 50_000
         });
 
-        let created = order::create(
-            pool,
-            titipers_id,
-            jastiper_id,
-            req,
-            snapshot,
-            PriceBreakdown {
-                unit_price: 25_000,
-                service_fee: 2_000,
-                total_price: 52_000,
-            },
-        )
-        .await
-        .expect("Gagal membuat dummy order");
+        let created = repo
+            .create(
+                titipers_id,
+                jastiper_id,
+                req,
+                snapshot,
+                PriceBreakdown {
+                    unit_price: 25_000,
+                    service_fee: 2_000,
+                    total_price: 52_000,
+                },
+            )
+            .await
+            .expect("Gagal membuat dummy order");
 
         (titipers_id, jastiper_id, created)
     }
 
     #[sqlx::test(migrations = "./migrations")]
     async fn test_create_berhasil(pool: PgPool) {
-        let (titipers_id, _, created) = create_dummy_order(&pool).await;
+        let repo = build_order_repo(pool);
+        let (titipers_id, _, created) = create_dummy_order(&repo).await;
 
         assert_eq!(created.titipers_id, titipers_id);
         assert_eq!(created.quantity, 2);
@@ -78,6 +89,8 @@ mod tests {
 
     #[sqlx::test(migrations = "./migrations")]
     async fn test_create_note_default_kosong(pool: PgPool) {
+        let repo = build_order_repo(pool);
+
         let titipers_id = Uuid::new_v4();
         let jastiper_id = Uuid::new_v4();
 
@@ -98,29 +111,52 @@ mod tests {
             note_to_jastiper: None,
         };
 
-        let created = order::create(
-            &pool,
-            titipers_id,
-            jastiper_id,
-            req,
-            json!({"name": "Produk A"}),
-            PriceBreakdown {
-                unit_price: 10_000,
-                service_fee: 1_000,
-                total_price: 11_000,
-            },
-        )
-        .await
-        .expect("Gagal create order tanpa note");
+        let created = repo
+            .create(
+                titipers_id,
+                jastiper_id,
+                req,
+                json!({"name": "Produk A"}),
+                PriceBreakdown {
+                    unit_price: 10_000,
+                    service_fee: 1_000,
+                    total_price: 11_000,
+                },
+            )
+            .await
+            .expect("Gagal create order tanpa note");
 
         assert_eq!(created.note_to_jastiper.unwrap().as_str(), "");
     }
 
     #[sqlx::test(migrations = "./migrations")]
-    async fn test_find_by_id_ditemukan(pool: PgPool) {
-        let (_, _, created) = create_dummy_order(&pool).await;
+    async fn test_create_otomatis_insert_status_history_pending(pool: PgPool) {
+        let history_repo = Arc::new(PgOrderStatusHistoryRepository::new(pool.clone()));
+        let repo = PgOrderRepository::new(pool.clone(), history_repo.clone());
 
-        let found = order::find_by_id(&pool, created.order_id)
+        let (titipers_id, _, created) = create_dummy_order(&repo).await;
+
+        use crate::repositories::order_status_history_repository::OrderStatusHistoryRepository;
+        let history = history_repo
+            .get_status_history(created.order_id)
+            .await
+            .expect("Query gagal");
+
+        assert!(!history.is_empty());
+        assert_eq!(
+            history[0].status,
+            OrderStatus::Pending.to_string().parse().unwrap()
+        );
+        assert_eq!(history[0].changed_by, titipers_id.to_string());
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn test_find_by_id_ditemukan(pool: PgPool) {
+        let repo = build_order_repo(pool);
+        let (_, _, created) = create_dummy_order(&repo).await;
+
+        let found = repo
+            .find_by_id(created.order_id)
             .await
             .expect("Query gagal");
 
@@ -130,17 +166,18 @@ mod tests {
 
     #[sqlx::test(migrations = "./migrations")]
     async fn test_find_by_id_tidak_ditemukan(pool: PgPool) {
-        let found = order::find_by_id(&pool, Uuid::new_v4())
-            .await
-            .expect("Query gagal");
+        let repo = build_order_repo(pool);
+
+        let found = repo.find_by_id(Uuid::new_v4()).await.expect("Query gagal");
 
         assert!(found.is_none());
     }
 
     #[sqlx::test(migrations = "./migrations")]
     async fn test_find_all_tanpa_filter(pool: PgPool) {
-        create_dummy_order(&pool).await;
-        create_dummy_order(&pool).await;
+        let repo = build_order_repo(pool);
+        create_dummy_order(&repo).await;
+        create_dummy_order(&repo).await;
 
         let pagination = PaginationParams {
             page: Some(1),
@@ -149,9 +186,7 @@ mod tests {
             order: None,
         };
 
-        let (orders, total) = order::find_all(&pool, None, &pagination)
-            .await
-            .expect("Query gagal");
+        let (orders, total) = repo.find_all(None, &pagination).await.expect("Query gagal");
 
         assert_eq!(orders.len(), 2);
         assert_eq!(total, 2);
@@ -159,16 +194,17 @@ mod tests {
 
     #[sqlx::test(migrations = "./migrations")]
     async fn test_find_all_filter_titipers_id(pool: PgPool) {
-        let (titipers_id, _, _) = create_dummy_order(&pool).await;
-        create_dummy_order(&pool).await;
+        let repo = build_order_repo(pool);
+        let (titipers_id, _, _) = create_dummy_order(&repo).await;
+        create_dummy_order(&repo).await;
 
         let filter = OrderFilter {
             titipers_id: Some(titipers_id),
             jastiper_id: None,
             product_id: None,
             status: None,
-            date_from: chrono::DateTime::from_timestamp(0, 0).unwrap(),
-            date_to: chrono::Utc::now(),
+            date_from: None,
+            date_to: None,
         };
 
         let pagination = PaginationParams {
@@ -178,7 +214,8 @@ mod tests {
             order: None,
         };
 
-        let (orders, total) = order::find_all(&pool, Some(&filter), &pagination)
+        let (orders, total) = repo
+            .find_all(Some(&filter), &pagination)
             .await
             .expect("Query gagal");
 
@@ -188,15 +225,16 @@ mod tests {
 
     #[sqlx::test(migrations = "./migrations")]
     async fn test_find_all_filter_status_pending(pool: PgPool) {
-        create_dummy_order(&pool).await;
+        let repo = build_order_repo(pool);
+        create_dummy_order(&repo).await;
 
         let filter = OrderFilter {
             titipers_id: None,
             jastiper_id: None,
             product_id: None,
             status: Some(OrderStatus::Pending),
-            date_from: chrono::DateTime::from_timestamp(0, 0).unwrap(),
-            date_to: chrono::Utc::now(),
+            date_from: None,
+            date_to: None,
         };
 
         let pagination = PaginationParams {
@@ -206,7 +244,8 @@ mod tests {
             order: None,
         };
 
-        let (orders, _) = order::find_all(&pool, Some(&filter), &pagination)
+        let (orders, _) = repo
+            .find_all(Some(&filter), &pagination)
             .await
             .expect("Query gagal");
 
@@ -215,8 +254,9 @@ mod tests {
 
     #[sqlx::test(migrations = "./migrations")]
     async fn test_find_all_pagination(pool: PgPool) {
+        let repo = build_order_repo(pool);
         for _ in 0..5 {
-            create_dummy_order(&pool).await;
+            create_dummy_order(&repo).await;
         }
 
         let pagination = PaginationParams {
@@ -226,9 +266,7 @@ mod tests {
             order: None,
         };
 
-        let (orders, total) = order::find_all(&pool, None, &pagination)
-            .await
-            .expect("Query gagal");
+        let (orders, total) = repo.find_all(None, &pagination).await.expect("Query gagal");
 
         assert_eq!(total, 5);
         assert_eq!(orders.len(), 3);
@@ -236,23 +274,24 @@ mod tests {
 
     #[sqlx::test(migrations = "./migrations")]
     async fn test_update_status(pool: PgPool) {
-        let (titipers_id, _, created) = create_dummy_order(&pool).await;
+        let repo = build_order_repo(pool);
+        let (titipers_id, _, created) = create_dummy_order(&repo).await;
 
-        let updated = order::update(
-            &pool,
-            created.order_id,
-            &OrderStatus::Paid,
-            UpdateOrderParams {
-                changed_by: &titipers_id.to_string(),
-                actor_role: &Role::Titipers,
-                notes: Some("Pembayaran diterima"),
-                tracking_number: None,
-                courier: None,
-                cancellation_reason: None,
-            },
-        )
-        .await
-        .expect("Update gagal");
+        let updated = repo
+            .update(
+                created.order_id,
+                &OrderStatus::Paid,
+                UpdateOrderParams {
+                    changed_by: &titipers_id.to_string(),
+                    actor_role: &Role::Titipers,
+                    notes: Some("Pembayaran diterima"),
+                    tracking_number: None,
+                    courier: None,
+                    cancellation_reason: None,
+                },
+            )
+            .await
+            .expect("Update gagal");
 
         assert_eq!(updated.status, OrderStatus::Paid);
         assert_eq!(updated.order_id, created.order_id);
@@ -260,23 +299,24 @@ mod tests {
 
     #[sqlx::test(migrations = "./migrations")]
     async fn test_update_completed_set_completed_at(pool: PgPool) {
-        let (_, jastiper_id, created) = create_dummy_order(&pool).await;
+        let repo = build_order_repo(pool);
+        let (_, jastiper_id, created) = create_dummy_order(&repo).await;
 
-        let updated = order::update(
-            &pool,
-            created.order_id,
-            &OrderStatus::Completed,
-            UpdateOrderParams {
-                changed_by: &jastiper_id.to_string(),
-                actor_role: &Role::Jastiper,
-                notes: Some("Pesanan selesai dikirim"),
-                tracking_number: Some("JNE-12345"),
-                courier: Some("JNE"),
-                cancellation_reason: None,
-            },
-        )
-        .await
-        .expect("Update gagal");
+        let updated = repo
+            .update(
+                created.order_id,
+                &OrderStatus::Completed,
+                UpdateOrderParams {
+                    changed_by: &jastiper_id.to_string(),
+                    actor_role: &Role::Jastiper,
+                    notes: Some("Pesanan selesai dikirim"),
+                    tracking_number: Some("JNE-12345"),
+                    courier: Some("JNE"),
+                    cancellation_reason: None,
+                },
+            )
+            .await
+            .expect("Update gagal");
 
         assert_eq!(updated.status, OrderStatus::Completed);
         assert!(updated.completed_at.is_some(), "completed_at harus terisi");
@@ -286,24 +326,76 @@ mod tests {
 
     #[sqlx::test(migrations = "./migrations")]
     async fn test_update_cancelled_dengan_alasan(pool: PgPool) {
-        let (titipers_id, _, created) = create_dummy_order(&pool).await;
+        let repo = build_order_repo(pool);
+        let (titipers_id, _, created) = create_dummy_order(&repo).await;
 
-        let updated = order::update(
-            &pool,
+        let updated = repo
+            .update(
+                created.order_id,
+                &OrderStatus::Cancelled,
+                UpdateOrderParams {
+                    changed_by: &titipers_id.to_string(),
+                    actor_role: &Role::Titipers,
+                    notes: Some("Dibatalkan oleh titipers"),
+                    tracking_number: None,
+                    courier: None,
+                    cancellation_reason: Some("Barang tidak tersedia"),
+                },
+            )
+            .await
+            .expect("Update gagal");
+
+        assert_eq!(updated.status, OrderStatus::Cancelled);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn test_update_otomatis_insert_status_history(pool: PgPool) {
+        let history_repo = Arc::new(PgOrderStatusHistoryRepository::new(pool.clone()));
+        let repo = PgOrderRepository::new(pool.clone(), history_repo.clone());
+
+        let (titipers_id, _, created) = create_dummy_order(&repo).await;
+
+        repo.update(
             created.order_id,
-            &OrderStatus::Cancelled,
+            &OrderStatus::Paid,
             UpdateOrderParams {
                 changed_by: &titipers_id.to_string(),
                 actor_role: &Role::Titipers,
-                notes: Some("Dibatalkan oleh titipers"),
+                notes: Some("Lunas"),
                 tracking_number: None,
                 courier: None,
-                cancellation_reason: Some("Barang tidak tersedia"),
+                cancellation_reason: None,
             },
         )
         .await
         .expect("Update gagal");
 
-        assert_eq!(updated.status, OrderStatus::Cancelled);
+        use crate::repositories::order_status_history_repository::OrderStatusHistoryRepository;
+        let history = history_repo
+            .get_status_history(created.order_id)
+            .await
+            .expect("Query gagal");
+
+        // history[0] = Pending (saat create), history[1] = Paid (saat update)
+        assert_eq!(history.len(), 2);
+        assert_eq!(
+            history[1].status,
+            OrderStatus::Paid.to_string().parse().unwrap()
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn test_delete_berhasil(pool: PgPool) {
+        let repo = build_order_repo(pool);
+        let (_, _, created) = create_dummy_order(&repo).await;
+
+        repo.delete(created.order_id).await.expect("Delete gagal");
+
+        let found = repo
+            .find_by_id(created.order_id)
+            .await
+            .expect("Query gagal");
+
+        assert!(found.is_none());
     }
 }

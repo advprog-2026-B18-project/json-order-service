@@ -1,10 +1,10 @@
-use crate::ports::auth_client::AuthClient;
-use crate::ports::inventory_client::InventoryClient;
-use crate::ports::order_repository::OrderRepository;
-use crate::ports::order_status_history_repository::OrderStatusHistoryRepository;
-use crate::ports::rating_jastiper_repository::RatingJastiperRepository;
-use crate::ports::rating_product_repository::RatingProductRepository;
-use crate::ports::wallet_client::WalletClient;
+use crate::repositories::order_repository::OrderRepository;
+use crate::repositories::order_status_history_repository::OrderStatusHistoryRepository;
+use crate::repositories::rating_jastiper_repository::RatingJastiperRepository;
+use crate::repositories::rating_product_repository::RatingProductRepository;
+use crate::services::auth_client::AuthClient;
+use crate::services::inventory_client::InventoryClient;
+use crate::services::wallet_client::WalletClient;
 use std::sync::Arc;
 
 pub struct AppState {

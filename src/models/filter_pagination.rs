@@ -10,8 +10,8 @@ pub struct OrderFilter {
     pub jastiper_id: Option<Uuid>,
     pub titipers_id: Option<Uuid>,
     pub product_id: Option<Uuid>,
-    pub date_from: DateTime<Utc>,
-    pub date_to: DateTime<Utc>,
+    pub date_from: Option<DateTime<Utc>>,
+    pub date_to: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Deserialize, ToSchema, Default)]
@@ -20,6 +20,15 @@ pub struct PaginationParams {
     pub limit: Option<i64>,
     pub sort_by: Option<String>,
     pub order: Option<SortOrder>,
+}
+
+#[derive(Debug, Deserialize, ToSchema, Default)]
+pub struct OrderQueryParams {
+    #[serde(flatten)]
+    pub pagination: PaginationParams,
+
+    #[serde(flatten)]
+    pub filter: OrderFilter,
 }
 
 #[derive(Debug, Deserialize, ToSchema, Default, Clone)]
