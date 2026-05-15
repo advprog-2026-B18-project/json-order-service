@@ -10,7 +10,7 @@ use validator::Validate;
 
 use crate::error::AppError;
 use crate::middleware::auth::JwtClaims;
-use crate::models::filter_pagination::PaginationParams;
+use crate::models::filter_pagination::OrderQueryParams;
 use crate::models::order::{CancelRequest, CreateOrderRequest, ShippedRequest};
 use crate::services::order as svc;
 use crate::state::AppState;
@@ -231,10 +231,10 @@ pub async fn cancel_order(
 pub async fn my_purchases(
     State(state): State<Arc<AppState>>,
     claims: JwtClaims,
-    Query(params): Query<PaginationParams>,
+    Query(params): Query<OrderQueryParams>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let page = params.page;
-    let limit = params.limit;
+    let page = params.pagination.page;
+    let limit = params.pagination.limit;
 
     let (orders, total) =
         svc::my_purchases(Arc::clone(&state.order_repo), claims.user_id()?, params).await?;
@@ -252,10 +252,10 @@ pub async fn my_purchases(
 pub async fn my_sales(
     State(state): State<Arc<AppState>>,
     claims: JwtClaims,
-    Query(params): Query<PaginationParams>,
+    Query(params): Query<OrderQueryParams>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let page = params.page;
-    let limit = params.limit;
+    let page = params.pagination.page;
+    let limit = params.pagination.limit;
 
     let (orders, total) =
         svc::my_sales(Arc::clone(&state.order_repo), claims.user_id()?, params).await?;

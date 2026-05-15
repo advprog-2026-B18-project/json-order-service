@@ -1,6 +1,5 @@
 #[cfg(test)]
 mod tests {
-    use super::*;
     use crate::error::AppError;
     use crate::services::implements::auth_client_impl::send_jastiper_rating;
     use uuid::Uuid;

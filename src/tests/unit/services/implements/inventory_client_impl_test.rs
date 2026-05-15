@@ -3,7 +3,6 @@ use crate::services::implements::inventory_client_impl::{
     fetch_product, release_stock, reserve_stock,
 };
 use serde_json::json;
-use serial_test::serial;
 use uuid::Uuid;
 use wiremock::matchers::{method, path, path_regex};
 use wiremock::{Mock, MockServer, ResponseTemplate};
