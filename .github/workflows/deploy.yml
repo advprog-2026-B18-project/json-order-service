@@ -1,10 +1,10 @@
-name: Deploy Rust Axum Service
+name: Deploy Rust Axum App - Order Service
 on:
   push:
     branches: [ main ]
 
 env:
-  SERVICE_NAME: rust-axum-app
+  SERVICE_NAME: order-service
 
 jobs:
   deploy:
