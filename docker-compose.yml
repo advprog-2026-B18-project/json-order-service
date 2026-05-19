@@ -1,0 +1,9 @@
+services:
+  rust-axum-app:
+    image: ghcr.io/advprog-2026-b18-project/json-order-service:latest
+    container_name: rust-axum-app
+    ports:
+      - "8084:8084"
+    env_file:
+      - .env
+    restart: always

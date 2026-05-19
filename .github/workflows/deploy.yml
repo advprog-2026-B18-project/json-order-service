@@ -31,6 +31,34 @@ jobs:
           push: true
           tags: ghcr.io/advprog-2026-b18-project/json-order-service:latest
 
+      # Dynamically generate the .env file on the GitHub Runner
+      - name: Generate .env file
+        env:
+          DB_URL: ${{ secrets.DB_URL_ORDER }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          INTERNAL_KEY: ${{ secrets.INTERNAL_SERVICE_KEY }}
+          SERVICE_URL_INVENTORY: ${{ secrets.SERVICE_URL_INVENTORY }}
+          SERVICE_URL_AUTH: ${{ secrets.SERVICE_URL_AUTH }}
+          SERVICE_URL_PAYMENT: ${{ secrets.SERVICE_URL_PAYMENT }}
+        run: |
+          echo "DATABASE_URL=$DB_URL" >> .env
+          echo "JWT_SECRET=$JWT_SECRET" >> .env
+          echo "INTERNAL_SERVICE_KEY=$INTERNAL_KEY" >> .env
+          echo "INVENTORY_SERVICE_URL=$SERVICE_URL_INVENTORY" >> .env
+          echo "USER_SERVICE_URL=$SERVICE_URL_AUTH" >> .env
+          echo "WALLET_SERVICE_URL=$SERVICE_URL_PAYMENT" >> .env
+      
+      # Copy docker-compose.yml and the newly generated .env via scp
+      - name: Copy files via scp
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          source: "docker-compose.yml,.env" 
+          target: "/home/ubuntu/"
+
+      # Deploy on EC2 
       - name: Deploy to EC2
         uses: appleboy/ssh-action@v1.0.3
         with:
@@ -40,4 +68,5 @@ jobs:
           script: |
             docker pull ghcr.io/advprog-2026-b18-project/json-order-service:latest
             docker compose -f /home/ubuntu/docker-compose.yml up -d --no-deps --build ${{ env.SERVICE_NAME }}
-            docker image prune -f
+            chmod 600 /home/ubuntu/.env
+            docker image prune -af
