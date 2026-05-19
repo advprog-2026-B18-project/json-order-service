@@ -1,7 +1,9 @@
 name: Deploy Rust Axum App - Order Service
 on:
   push:
-    branches: [ main ]
+    branches: 
+      - main
+      - setup/deploy
 
 env:
   SERVICE_NAME: order-service
