@@ -65,6 +65,9 @@ temp-env = "0.3.6"
 tower = "0.5.3"
 mockito = "1.7.2"
 
+# Queueing
+lapin = "2.3"
+deadpool-lapin = { version = "0.12", features = ["rt_tokio_1"] }
 
 [dev-dependencies]
 # Srialisasi
