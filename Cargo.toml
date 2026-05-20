@@ -68,6 +68,7 @@ mockito = "1.7.2"
 # Queueing
 lapin = "2.3"
 deadpool-lapin = { version = "0.12", features = ["rt_tokio_1"] }
+futures-lite = "2.6.1"
 
 [dev-dependencies]
 # Srialisasi

@@ -1,11 +1,9 @@
-use std::sync::Arc;
-use tracing::{debug, error, info, warn};
-use uuid::Uuid;
-
+use crate::models::checkout_request::CheckoutRequest;
 use crate::error::AppError;
+use crate::infrastructure::publisher::publish_checkout;
 use crate::models::filter_pagination::{OrderFilter, OrderQueryParams};
 use crate::models::order::{
-    CancelRequest, CreateOrderRequest, Order, ShippedRequest, UpdateOrderParams,
+    CancelRequest, CreateOrderRequest, Order, PriceBreakdown, ShippedRequest, UpdateOrderParams,
     UpdateStatusRequest,
 };
 use crate::models::order_state::OrderMachine;
@@ -14,9 +12,6 @@ use crate::models::role::Role;
 use crate::orchestrator::SagaOrchestrator;
 use crate::orchestrator::cancel_order_saga::{
     CancelOrderContext, RefundWalletStep, ReleaseStockStep, UpdateStatusToRefundingStep,
-};
-use crate::orchestrator::checkout_saga::{
-    CheckWalletStep, CreateOrderStep, ReserveStockStep, build_checkout_context,
 };
 use crate::orchestrator::confirm_order_saga::{
     ConfirmOrderContext, SendConfirmationProductStep, TransferEarningsStep,
@@ -27,12 +22,15 @@ use crate::repositories::order_repository::OrderRepository;
 use crate::repositories::order_status_history_repository::OrderStatusHistoryRepository;
 use crate::services::inventory_client::InventoryClient;
 use crate::services::wallet_client::WalletClient;
+use std::sync::Arc;
+use tracing::{debug, error, info, warn};
+use uuid::Uuid;
 
 // ── checkout ──────────────────────────────────────────────────────
 pub async fn checkout(
     order_repo: Arc<dyn OrderRepository + Send + Sync>,
     inventory_client: Arc<dyn InventoryClient + Send + Sync>,
-    wallet_client: Arc<dyn WalletClient + Send + Sync>,
+    mq_pool: &deadpool_lapin::Pool,
     titipers_id: Uuid,
     req: CreateOrderRequest,
 ) -> Result<Order, AppError> {
@@ -41,7 +39,7 @@ pub async fn checkout(
         titipers_id, req.product_id, req.quantity
     );
 
-    // Validation
+    // 1. Fetch product
     let product = inventory_client
         .fetch_product(req.product_id)
         .await
@@ -59,87 +57,60 @@ pub async fn checkout(
         ));
     }
 
-    // Saga step
-    let mut ctx = build_checkout_context(titipers_id, jastiper_id, req, product);
+    // 2. Hitung harga — harus sebelum create()
+    let unit_price = product["price"].as_i64().unwrap_or(0);
+    let service_fee = product["service_fee"].as_i64().unwrap_or(0);
+    let total_price = (unit_price + service_fee) * req.quantity as i64;
 
-    let saga = SagaOrchestrator::new("checkout")
-        .step(CheckWalletStep {
-            wallet_client: Arc::clone(&wallet_client),
-        })
-        .step(CreateOrderStep {
-            order_repo: Arc::clone(&order_repo),
-        })
-        .step(ReserveStockStep {
-            inventory_client: Arc::clone(&inventory_client),
-        });
-
-    saga.run(&mut ctx).await?;
-
-    let order = ctx
-        .created_order
-        .expect("CreateOrderStep harus mengisi created_order");
-
-    // ── AUTO-CANCEL setelah 15 menit jika masih PENDING ──
-    let order_id = order.order_id;
-    let titipers_id_clone = titipers_id;
-    let repo_clone = Arc::clone(&order_repo);
-    let inventory_clone = Arc::clone(&inventory_client);
-    let wallet_clone = Arc::clone(&wallet_client);
-
-    tokio::spawn(async move {
-        tokio::time::sleep(std::time::Duration::from_secs(15 * 60)).await;
-
-        match repo_clone.find_by_id(order_id).await {
-            Ok(Some(o)) if o.status == OrderStatus::Pending => {
-                info!(
-                    "⏰ [checkout] order_id={} timeout 15 menit, auto-cancel",
-                    order_id
-                );
-                let result = cancel_order(
-                    repo_clone,
-                    inventory_clone,
-                    wallet_clone,
-                    order_id,
-                    Uuid::default(),
-                    &Role::System,
-                    CancelRequest {
-                        cancellation_reason:
-                            "Pembayaran timeout, order otomatis dibatalkan setelah 15 menit"
-                                .to_string(),
-                    },
-                )
-                .await;
-
-                if let Err(e) = result {
-                    error!(
-                        "❌ [checkout] auto-cancel gagal order_id={}: {:?}",
-                        order_id, e
-                    );
-                }
-            }
-            Ok(Some(_)) => {
-                debug!(
-                    "⏰ [checkout] order_id={} sudah tidak PENDING, skip auto-cancel",
-                    order_id
-                );
-            }
-            Ok(None) => {
-                warn!(
-                    "⏰ [checkout] order_id={} tidak ditemukan saat auto-cancel",
-                    order_id
-                );
-            }
-            Err(e) => {
-                error!(
-                    "❌ [checkout] DB error saat auto-cancel order_id={}: {:?}",
-                    order_id, e
-                );
-            }
-        }
+    // 3. Buat snapshot
+    let snapshot = serde_json::json!({
+        "product_id":     req.product_id,
+        "name":           product["name"],
+        "description":    product["description"],
+        "image_url":      product["images"][0],
+        "origin_country": product["originCountry"],
+        "purchase_date":  product["purchaseDate"],
+        "unit_price":     unit_price,
+        "service_fee":    service_fee,
     });
-    // ── END AUTO-CANCEL ──
 
-    info!("✅ [checkout] selesai order_id={}", order.order_id);
+    // 4. Buat order Reserving di DB
+    let order = order_repo
+        .create(
+            titipers_id,
+            jastiper_id,
+            req.clone(),
+            snapshot,
+            PriceBreakdown {
+                unit_price,
+                service_fee,
+                total_price,
+            },
+        )
+        .await
+        .map_err(|e| {
+            error!("❌ [checkout] create order gagal: {:?}", e);
+            e
+        })?;
+
+    // 5. Publish ke queue
+    let checkout_request = CheckoutRequest {
+        order_id: order.order_id,
+        titipers_id,
+        jastiper_id,
+        req,
+        product,
+        idempotency_key: order.order_id,
+    };
+
+    publish_checkout(mq_pool, &checkout_request)
+        .await
+        .map_err(|e| {
+            error!("❌ [checkout] publish ke queue gagal: {e}");
+            AppError::Internal
+        })?;
+
+    info!("✅ [checkout] order queued order_id={}", order.order_id);
     Ok(order)
 }
 

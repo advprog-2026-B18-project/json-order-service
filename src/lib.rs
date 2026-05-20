@@ -1,6 +1,7 @@
 pub mod controller;
 pub mod db;
 pub mod error;
+pub mod infrastructure;
 pub mod middleware;
 pub mod models;
 pub mod orchestrator;

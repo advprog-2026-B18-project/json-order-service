@@ -1,3 +1,4 @@
+use crate::repositories::idempotency_repository::IdempotencyRepository;
 use crate::repositories::order_repository::OrderRepository;
 use crate::repositories::order_status_history_repository::OrderStatusHistoryRepository;
 use crate::repositories::rating_jastiper_repository::RatingJastiperRepository;
@@ -5,6 +6,7 @@ use crate::repositories::rating_product_repository::RatingProductRepository;
 use crate::services::auth_client::AuthClient;
 use crate::services::inventory_client::InventoryClient;
 use crate::services::wallet_client::WalletClient;
+use deadpool_lapin::Pool;
 use std::sync::Arc;
 
 pub struct AppState {
@@ -15,4 +17,7 @@ pub struct AppState {
     pub inventory_client: Arc<dyn InventoryClient + Send + Sync>,
     pub wallet_client: Arc<dyn WalletClient + Send + Sync>,
     pub auth_client: Arc<dyn AuthClient + Send + Sync>,
+
+    pub mq_pool: Pool,
+    pub idempotency_repo: Arc<dyn IdempotencyRepository + Send + Sync>,
 }

@@ -44,18 +44,22 @@ pub async fn checkout(
     let order = svc::checkout(
         Arc::clone(&state.order_repo),
         Arc::clone(&state.inventory_client),
-        Arc::clone(&state.wallet_client),
+        &state.mq_pool,
         claims.user_id()?,
         req,
     )
     .await?;
 
     Ok((
-        StatusCode::CREATED,
+        StatusCode::ACCEPTED,
         Json(json!({
             "success": true,
-            "message": "Pesanan berhasil dibuat",
-            "data": order,
+            "message": "Checkout sedang diproses",
+            "data": {
+                "order_id": order.order_id,
+                "status": order.status,
+                "message": "Poll GET /orders/{order_id} untuk status terbaru"
+            },
         })),
     ))
 }
