@@ -123,9 +123,9 @@ impl OrderState for PendingState {
 
     fn cancel(&self, role: &Role) -> Result<OrderStatus, AppError> {
         match role {
-            Role::Jastiper | Role::Admin => Ok(OrderStatus::Cancelled),
+            Role::Jastiper | Role::Admin | Role::System => Ok(OrderStatus::Cancelled),
             _ => Err(AppError::Forbidden(
-                "Hanya JASTIPER atau ADMIN yang bisa cancel order PENDING".to_string(),
+                "Hanya JASTIPER, ADMIN, atau SYSTEM yang bisa cancel order PENDING".to_string(),
             )),
         }
     }

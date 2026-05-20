@@ -100,8 +100,8 @@ pub async fn checkout(
                     inventory_clone,
                     wallet_clone,
                     order_id,
-                    titipers_id_clone,
-                    &Role::Titipers,
+                    Uuid::default(),
+                    &Role::System,
                     CancelRequest {
                         cancellation_reason:
                             "Pembayaran timeout, order otomatis dibatalkan setelah 15 menit"
