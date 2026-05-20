@@ -8,3 +8,4 @@ pub mod rating_jastiper;
 pub mod rating_product;
 pub mod role;
 pub mod shipping_address;
+pub mod checkout_request;
