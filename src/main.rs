@@ -13,7 +13,7 @@ use json_order_service::services::adapters::auth_client_adapt::HttpAuthClient;
 use json_order_service::services::adapters::inventory_client_adapt::HttpInventoryClient;
 use json_order_service::services::adapters::wallet_client_adapt::HttpWalletClient;
 use json_order_service::state::AppState;
-use metrics::{counter, histogram};
+use metrics::{counter, describe_histogram, histogram};
 use metrics_exporter_prometheus::{PrometheusBuilder, PrometheusHandle};
 use metrics_process::Collector;
 use std::sync::Arc;
@@ -59,9 +59,21 @@ async fn metrics_handler(State(handle): State<PrometheusHandle>) -> String {
 // Prometheus recorder + process metrics setup
 // Call once before building the router. 
 fn setup_metrics() -> PrometheusHandle {
+    let buckets = &[
+        0.001, 0.002, 0.004, 0.008, 0.016, 0.032, 0.064, 0.128, 0.256,
+        0.512, 1.024, 2.048, 4.096, 8.192, 16.384,
+    ];
+
     let handle = PrometheusBuilder::new()
+        .set_buckets(buckets)
+        .expect("invalid histogram buckets")
         .install_recorder()
         .expect("failed to install Prometheus recorder");
+
+    describe_histogram!(
+        "http_request_duration_seconds",
+        "HTTP request duration in seconds"
+    );
 
     let collector = Collector::default();
     collector.describe();
