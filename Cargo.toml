@@ -65,6 +65,10 @@ temp-env = "0.3.6"
 tower = "0.5.3"
 mockito = "1.7.2"
 
+# Monitoring
+metrics = "0.23"
+metrics-exporter-prometheus = "0.15"
+metrics-process = "2.1"          # process metrics: CPU, memory, FDs
 
 [dev-dependencies]
 # Srialisasi
