@@ -5,6 +5,7 @@ mod tests {
     use std::sync::Arc;
     use uuid::Uuid;
 
+    use crate::models::filter_pagination::PaginationParams;
     use crate::models::order::{CreateOrderRequest, PriceBreakdown, ShippingAddress};
     use crate::models::rating_product::CreateRatingProductRequest;
     use crate::repositories::adapters::order_adapt::PgOrderRepository;
@@ -278,5 +279,62 @@ mod tests {
             found_b.is_none(),
             "order_b tidak boleh mendapat rating milik order_a"
         );
+    }
+
+    // === find_all_by_product_id ===
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn test_find_all_by_product_id_returns_ratings(pool: PgPool) {
+        let (order_repo, rating_repo) = build_rating_product_repo(pool);
+        let (titipers_id, order) = create_dummy_order(&order_repo).await;
+
+        rating_repo
+            .create(
+                order.order_id,
+                titipers_id,
+                &CreateRatingProductRequest {
+                    product_rating: 4f64,
+                    product_review: Some("Produk bagus".to_string()),
+                    product_images: None,
+                },
+            )
+            .await
+            .unwrap();
+
+        let pagination = PaginationParams {
+            page: Some(1),
+            limit: Some(10),
+            sort_by: None,
+            order: None,
+        };
+
+        let (ratings, total) = rating_repo
+            .find_all_by_product_id(order.product_id, &pagination)
+            .await
+            .expect("Query gagal");
+
+        assert_eq!(ratings.len(), 1);
+        assert_eq!(total, 1);
+        assert_eq!(ratings[0].product_rating, 4f64);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn test_find_all_by_product_id_no_ratings(pool: PgPool) {
+        let (_, rating_repo) = build_rating_product_repo(pool);
+
+        let pagination = PaginationParams {
+            page: Some(1),
+            limit: Some(10),
+            sort_by: None,
+            order: None,
+        };
+
+        let (ratings, total) = rating_repo
+            .find_all_by_product_id(Uuid::new_v4(), &pagination)
+            .await
+            .expect("Query gagal");
+
+        assert!(ratings.is_empty());
+        assert_eq!(total, 0);
     }
 }

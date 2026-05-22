@@ -88,7 +88,10 @@ fn setup_metrics() -> MetricsState {
 #[tokio::main]
 async fn main() {
     tracing_subscriber::fmt()
-        .with_env_filter("json_order_service=debug,tower_http=debug")
+        .with_env_filter(
+            std::env::var("RUST_LOG")
+                .unwrap_or_else(|_| "json_order_service=warn,tower_http=warn".to_string()),
+        )
         .init();
 
     dotenvy::dotenv().ok();
@@ -125,7 +128,7 @@ async fn main() {
         inventory_client: Arc::new(HttpInventoryClient),
         wallet_client: Arc::new(HttpWalletClient),
         auth_client: Arc::new(HttpAuthClient),
-        checkout_publisher: Arc::new(RabbitMqCheckoutPublisher::new(mq_pool.clone())),
+        checkout_publisher: Arc::new(RabbitMqCheckoutPublisher::new(&mq_pool)),
         mq_pool: mq_pool.clone(),
         idempotency_repo,
     });
