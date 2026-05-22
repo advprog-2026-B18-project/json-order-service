@@ -42,6 +42,7 @@ jobs:
           SERVICE_URL_INVENTORY: ${{ secrets.SERVICE_URL_INVENTORY }}
           SERVICE_URL_AUTH: ${{ secrets.SERVICE_URL_AUTH }}
           SERVICE_URL_PAYMENT: ${{ secrets.SERVICE_URL_PAYMENT }}
+          AMQP_URL: ${{ secrets.AMQP_URL }}
         run: |
           echo "DATABASE_URL=$DB_URL" >> .env
           echo "JWT_SECRET=$JWT_SECRET" >> .env
@@ -49,6 +50,7 @@ jobs:
           echo "INVENTORY_SERVICE_URL=$SERVICE_URL_INVENTORY" >> .env
           echo "USER_SERVICE_URL=$SERVICE_URL_AUTH" >> .env
           echo "WALLET_SERVICE_URL=$SERVICE_URL_PAYMENT" >> .env
+          echo "AMQP_URL=${secrets.AMQP_URL}" >> .env
       
       # Copy docker-compose.yml and the newly generated .env via scp
       - name: Copy files via scp
