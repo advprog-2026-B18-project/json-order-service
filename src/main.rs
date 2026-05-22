@@ -1,9 +1,10 @@
 use axum::Router;
-use axum::extract::{MatchedPath, Request, State};
+use axum::extract::{MatchedPath, Request};
 use axum::middleware::{self, Next};
 use axum::response::IntoResponse;
 use axum::routing::get;
 use json_order_service::db;
+use json_order_service::metrics::{MetricsState, metrics_handler};
 use json_order_service::repositories::adapters::order_adapt::PgOrderRepository;
 use json_order_service::repositories::adapters::order_status_history_adapt::PgOrderStatusHistoryRepository;
 use json_order_service::repositories::adapters::rating_jastiper_adapt::PgRatingJastiperRepository;
@@ -14,7 +15,7 @@ use json_order_service::services::adapters::inventory_client_adapt::HttpInventor
 use json_order_service::services::adapters::wallet_client_adapt::HttpWalletClient;
 use json_order_service::state::AppState;
 use metrics::{counter, describe_histogram, histogram};
-use metrics_exporter_prometheus::{PrometheusBuilder, PrometheusHandle};
+use metrics_exporter_prometheus::PrometheusBuilder;
 use metrics_process::Collector;
 use std::sync::Arc;
 use std::time::Instant;
@@ -41,7 +42,7 @@ async fn track_metrics(req: Request, next: Next) -> impl IntoResponse {
 
     let labels = [
         ("endpoint", path),
-        ("method",   method),
+        ("method", method),
         ("status_code", status_code),
     ];
 
@@ -51,17 +52,12 @@ async fn track_metrics(req: Request, next: Next) -> impl IntoResponse {
     response
 }
 
-// Renders the current Prometheus text format snapshot.
-async fn metrics_handler(State(handle): State<PrometheusHandle>) -> String {
-    handle.render()
-}
-
 // Prometheus recorder + process metrics setup
-// Call once before building the router. 
-fn setup_metrics() -> PrometheusHandle {
+// Call once before building the router.
+fn setup_metrics() -> MetricsState {
     let buckets = &[
-        0.001, 0.002, 0.004, 0.008, 0.016, 0.032, 0.064, 0.128, 0.256,
-        0.512, 1.024, 2.048, 4.096, 8.192, 16.384,
+        0.001, 0.002, 0.004, 0.008, 0.016, 0.032, 0.064, 0.128, 0.256, 0.512, 1.024, 2.048, 4.096,
+        8.192, 16.384,
     ];
 
     let handle = PrometheusBuilder::new()
@@ -78,16 +74,10 @@ fn setup_metrics() -> PrometheusHandle {
     let collector = Collector::default();
     collector.describe();
 
-    tokio::spawn(async move {
-        let mut interval =
-            tokio::time::interval(std::time::Duration::from_secs(5));
-        loop {
-            interval.tick().await;
-            collector.collect();
-        }
-    });
+    // Process metrics are collected at scrape time in metrics_handler,
+    // so no background polling task is needed.
 
-    handle
+    MetricsState { handle, collector }
 }
 
 #[tokio::main]
@@ -98,7 +88,7 @@ async fn main() {
 
     dotenvy::dotenv().ok();
 
-    let metrics_handle = setup_metrics();
+    let metrics_state = setup_metrics();
 
     let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL harus diset di .env");
     let pool = db::create_pool(&database_url).await;
@@ -114,15 +104,15 @@ async fn main() {
         rating_product_repo: Arc::new(PgRatingProductRepository::new(pool.clone())),
         rating_jastiper_repo: Arc::new(PgRatingJastiperRepository::new(pool.clone())),
         inventory_client: Arc::new(HttpInventoryClient),
-        wallet_client:    Arc::new(HttpWalletClient),
-        auth_client:      Arc::new(HttpAuthClient),
+        wallet_client: Arc::new(HttpWalletClient),
+        auth_client: Arc::new(HttpAuthClient),
     });
 
     let api_router = create_app(state);
 
     let app = Router::new()
         .route("/metrics", get(metrics_handler))
-        .with_state(metrics_handle)
+        .with_state(metrics_state)
         .merge(api_router)
         .route_layer(middleware::from_fn(track_metrics));
 
