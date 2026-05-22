@@ -350,8 +350,7 @@ async fn http_inventory_client_adapter_send_product_rating_success() {
             ("INTERNAL_SERVICE_KEY", Some("test-key")),
         ],
         async {
-            let client =
-                crate::services::adapters::inventory_client_adapt::HttpInventoryClient;
+            let client = crate::services::adapters::inventory_client_adapt::HttpInventoryClient;
             let result = client
                 .send_product_rating(Uuid::new_v4(), Uuid::new_v4(), 4.5, None, vec![])
                 .await;

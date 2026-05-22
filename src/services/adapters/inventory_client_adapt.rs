@@ -52,4 +52,3 @@ impl InventoryClient for HttpInventoryClient {
         confirm_order_received(product_id, order_id).await
     }
 }
-

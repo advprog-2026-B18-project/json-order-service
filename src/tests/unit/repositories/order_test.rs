@@ -589,7 +589,10 @@ mod tests {
 
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].order_id, expired_order_id);
-        assert_eq!(result[0].status, crate::models::order_state::OrderStatus::Pending);
+        assert_eq!(
+            result[0].status,
+            crate::models::order_state::OrderStatus::Pending
+        );
     }
 
     #[sqlx::test(migrations = "./migrations")]

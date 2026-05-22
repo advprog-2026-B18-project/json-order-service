@@ -85,5 +85,8 @@ async fn test_rabbit_mq_checkout_publisher_publish_success() {
     let publisher = RabbitMqCheckoutPublisher::new(&pool);
     let request = checkout_request();
     let result = publisher.publish(&request).await;
-    assert!(result.is_ok(), "Publish should succeed with RabbitMQ running");
+    assert!(
+        result.is_ok(),
+        "Publish should succeed with RabbitMQ running"
+    );
 }
