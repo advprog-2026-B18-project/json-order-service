@@ -5,6 +5,7 @@ mod tests {
     use uuid::Uuid;
 
     use crate::models::order::{CreateOrderRequest, PriceBreakdown, ShippingAddress};
+    use crate::models::filter_pagination::PaginationParams;
     use crate::models::rating_jastiper::CreateRatingJastiperRequest;
     use crate::repositories::adapters::order_adapt::PgOrderRepository;
     use crate::repositories::adapters::order_status_history_adapt::PgOrderStatusHistoryRepository;
@@ -296,5 +297,61 @@ mod tests {
         assert_eq!(found.titipers_id, titipers_id);
         assert_eq!(found.jastiper_rating, 2f64);
         assert_eq!(found.jastiper_review, Some("Pengiriman lambat".to_string()));
+    }
+
+    // === find_all_by_jastiper_id ===
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn test_find_all_by_jastiper_id_returns_ratings(pool: PgPool) {
+        let (order_repo, rating_repo) = build_rating_jastiper_repo(pool);
+        let (titipers_id, jastiper_id, order) = create_dummy_order(&order_repo).await;
+
+        rating_repo
+            .create(
+                order.order_id,
+                titipers_id,
+                &CreateRatingJastiperRequest {
+                    jastiper_rating: 4f64,
+                    jastiper_review: Some("Bagus".to_string()),
+                },
+            )
+            .await
+            .unwrap();
+
+        let pagination = PaginationParams {
+            page: Some(1),
+            limit: Some(10),
+            sort_by: None,
+            order: None,
+        };
+
+        let (ratings, total) = rating_repo
+            .find_all_by_jastiper_id(jastiper_id, &pagination)
+            .await
+            .expect("Query gagal");
+
+        assert_eq!(ratings.len(), 1);
+        assert_eq!(total, 1);
+        assert_eq!(ratings[0].jastiper_rating, 4f64);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn test_find_all_by_jastiper_id_no_ratings(pool: PgPool) {
+        let (_, rating_repo) = build_rating_jastiper_repo(pool);
+
+        let pagination = PaginationParams {
+            page: Some(1),
+            limit: Some(10),
+            sort_by: None,
+            order: None,
+        };
+
+        let (ratings, total) = rating_repo
+            .find_all_by_jastiper_id(Uuid::new_v4(), &pagination)
+            .await
+            .expect("Query gagal");
+
+        assert!(ratings.is_empty());
+        assert_eq!(total, 0);
     }
 }
