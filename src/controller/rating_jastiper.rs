@@ -1,6 +1,6 @@
 use axum::{
     Json,
-    extract::{Path, State},
+    extract::{Path, Query, State},
 };
 use reqwest::StatusCode;
 use serde_json::json;
@@ -10,6 +10,7 @@ use validator::Validate;
 
 use crate::error::AppError;
 use crate::middleware::auth::JwtClaims;
+use crate::models::filter_pagination::PaginationParams;
 use crate::models::rating_jastiper::CreateRatingJastiperRequest;
 use crate::services::rating_jastiper as svc;
 use crate::state::AppState;
@@ -46,6 +47,35 @@ pub async fn submit_rating_jastiper(
             }
         })),
     ))
+}
+
+// GET /jastipers/{jastiper_id}/ratings (public — no auth)
+pub async fn get_ratings_by_jastiper(
+    State(state): State<Arc<AppState>>,
+    Path(jastiper_id): Path<Uuid>,
+    Query(params): Query<PaginationParams>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let (ratings, total, average) = svc::get_ratings_by_jastiper(
+        Arc::clone(&state.rating_jastiper_repo),
+        jastiper_id,
+        &params,
+    )
+    .await?;
+
+    let page = params.page.unwrap_or(1).max(1);
+    let limit = params.limit.unwrap_or(20).min(100);
+
+    Ok(Json(json!({
+        "success": true,
+        "message": "Daftar rating jastiper ditemukan",
+        "data": {
+            "ratings": ratings,
+            "page": page,
+            "limit": limit,
+            "total": total,
+            "average_rating": average,
+        }
+    })))
 }
 
 // GET /orders/{order_id}/rating/jastiper

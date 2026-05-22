@@ -36,4 +36,6 @@ pub trait OrderRepository: Send + Sync {
     ) -> Result<Order>;
 
     async fn delete(&self, order_id: Uuid) -> Result<()>;
+
+    async fn find_expired_pending_orders(&self) -> Result<Vec<Order>>;
 }

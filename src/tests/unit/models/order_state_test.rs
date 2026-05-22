@@ -1,5 +1,6 @@
 #[cfg(test)]
 mod tests {
+    use crate::error::AppError;
     use crate::models::order::OrderStatus;
     use crate::models::order_state::OrderMachine;
     use crate::models::role::Role;
@@ -102,6 +103,22 @@ mod tests {
             machine(OrderStatus::Cancelled).current_status(),
             OrderStatus::Cancelled
         );
+        assert_eq!(
+            machine(OrderStatus::Reserving).current_status(),
+            OrderStatus::Reserving
+        );
+        assert_eq!(
+            machine(OrderStatus::Purchased).current_status(),
+            OrderStatus::Purchased
+        );
+        assert_eq!(
+            machine(OrderStatus::Refunding).current_status(),
+            OrderStatus::Refunding
+        );
+        assert_eq!(
+            machine(OrderStatus::RefundFailed).current_status(),
+            OrderStatus::RefundFailed
+        );
     }
 
     #[test]
@@ -118,6 +135,57 @@ mod tests {
             m.update_status(&Role::System, &OrderStatus::Paid).unwrap(),
             OrderStatus::Paid
         );
+    }
+
+    // === Happy Path ===
+    #[test]
+    fn test_reserving_to_pending_by_system_returns_pending() {
+        // Arrange
+        let mut m = machine(OrderStatus::Reserving);
+
+        // Act
+        let result = m.update_status(&Role::System, &OrderStatus::Pending);
+
+        // Assert
+        assert_eq!(result.unwrap(), OrderStatus::Pending);
+        assert_eq!(m.current_status(), OrderStatus::Pending);
+    }
+
+    #[test]
+    fn test_reserving_cancel_by_system_returns_cancelled() {
+        // Arrange
+        let m = machine(OrderStatus::Reserving);
+
+        // Act
+        let result = m.cancel(&Role::System);
+
+        // Assert
+        assert_eq!(result.unwrap(), OrderStatus::Cancelled);
+    }
+
+    // === Error Path ===
+    #[test]
+    fn test_reserving_update_by_titipers_returns_forbidden() {
+        // Arrange
+        let mut m = machine(OrderStatus::Reserving);
+
+        // Act
+        let result = m.update_status(&Role::Titipers, &OrderStatus::Pending);
+
+        // Assert
+        assert!(matches!(result, Err(AppError::Forbidden(_))));
+    }
+
+    #[test]
+    fn test_reserving_cancel_by_titipers_returns_forbidden() {
+        // Arrange
+        let m = machine(OrderStatus::Reserving);
+
+        // Act
+        let result = m.cancel(&Role::Titipers);
+
+        // Assert
+        assert!(matches!(result, Err(AppError::Forbidden(_))));
     }
 
     #[test]
@@ -185,8 +253,11 @@ mod tests {
     }
 
     #[test]
-    fn pending_cancel_by_system_forbidden() {
-        assert!(machine(OrderStatus::Pending).cancel(&Role::System).is_err());
+    fn pending_cancel_by_system_ok() {
+        assert_eq!(
+            machine(OrderStatus::Pending).cancel(&Role::System).unwrap(),
+            OrderStatus::Cancelled
+        );
     }
 
     #[test]

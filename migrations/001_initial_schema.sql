@@ -20,7 +20,8 @@ CREATE TABLE IF NOT EXISTS "order" (
     cancelled_by        TEXT,
     completed_at        TIMESTAMPTZ,
     created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    expired_at          TIMESTAMPTZ
     );
 
 CREATE TABLE IF NOT EXISTS "order_status_history" (
@@ -51,6 +52,12 @@ CREATE TABLE IF NOT EXISTS "rating_product" (
     product_images      TEXT[] NOT NULL DEFAULT '{}',
     created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+
+CREATE TABLE IF NOT EXISTS idempotency_keys (
+    key         UUID        PRIMARY KEY,
+    order_id    UUID        NOT NULL REFERENCES "order" (order_id),
+    processed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
 
 CREATE INDEX IF NOT EXISTS idx_order_titipers   ON "order"(titipers_id);
 CREATE INDEX IF NOT EXISTS idx_order_jastiper   ON "order"(jastiper_id);

@@ -6,7 +6,9 @@ use uuid::Uuid;
 
 use crate::error::AppError;
 use crate::models::order::Order;
+use crate::models::order::UpdateOrderParams;
 use crate::models::order_status_history::OrderStatus;
+use crate::models::role::Role;
 use crate::orchestrator::SagaStep;
 use crate::repositories::order_repository::OrderRepository;
 use crate::services::wallet_client::WalletClient;
@@ -36,9 +38,6 @@ impl SagaStep for UpdateStatusToPaidStep {
     type Context = PaymentContext;
 
     async fn execute(&self, ctx: &mut PaymentContext) -> Result<(), AppError> {
-        use crate::models::order::UpdateOrderParams;
-        use crate::models::role::Role;
-
         let order = self
             .order_repo
             .update(

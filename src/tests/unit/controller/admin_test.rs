@@ -17,7 +17,10 @@ use crate::services::auth_client::MockAuthClient;
 use crate::services::inventory_client::MockInventoryClient;
 use crate::services::wallet_client::{MockWalletClient, RefundResponse};
 use crate::state::AppState;
-use crate::tests::unit::controller::helper_test::{TestApp, json_request, make_test_token};
+use crate::tests::unit::controller::helper_test::{
+    TestApp, dummy_mq_pool, json_request, make_test_token, noop_checkout_publisher,
+    noop_idempotency_repo,
+};
 
 // ──────────────────────────────────────────────────────────────
 // Helpers
@@ -51,6 +54,7 @@ fn make_order(order_id: Uuid, titipers_id: Uuid, jastiper_id: Uuid, status: Orde
         completed_at: None,
         created_at: Utc::now(),
         updated_at: Utc::now(),
+        expired_at: Utc::now(),
     }
 }
 
@@ -67,6 +71,9 @@ fn default_state(
         rating_product_repo: Arc::new(MockRatingProductRepository::new()),
         rating_jastiper_repo: Arc::new(MockRatingJastiperRepository::new()),
         auth_client: Arc::new(MockAuthClient::new()),
+        checkout_publisher: Arc::new(noop_checkout_publisher()),
+        mq_pool: dummy_mq_pool(),
+        idempotency_repo: Arc::new(noop_idempotency_repo()),
     }
 }
 

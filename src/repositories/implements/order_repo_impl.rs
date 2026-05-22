@@ -56,6 +56,7 @@ pub async fn find_all(
             OrderIden::CompletedAt,
             OrderIden::CreatedAt,
             OrderIden::UpdatedAt,
+            OrderIden::ExpiredAt,
         ])
         .from(OrderIden::Order)
         .cond_where(condition.clone())
@@ -138,6 +139,7 @@ pub async fn find_by_id(pool: &PgPool, order_id: Uuid) -> Result<Option<Order>> 
             OrderIden::CompletedAt,
             OrderIden::CreatedAt,
             OrderIden::UpdatedAt,
+            OrderIden::ExpiredAt,
         ])
         .from(OrderIden::Order)
         .and_where(Expr::col(OrderIden::OrderId).eq(order_id))
@@ -161,6 +163,7 @@ pub async fn create(
 ) -> Result<Order> {
     let order_id = Uuid::new_v4();
     let now = Utc::now();
+    let expired_at = now + chrono::Duration::minutes(15);
 
     let (sql, values) = Query::insert()
         .into_table(OrderIden::Order)
@@ -179,6 +182,7 @@ pub async fn create(
             OrderIden::NoteToJastiper,
             OrderIden::CreatedAt,
             OrderIden::UpdatedAt,
+            OrderIden::ExpiredAt,
         ])
         .values_panic([
             order_id.into(),
@@ -190,11 +194,12 @@ pub async fn create(
             price.unit_price.into(),
             price.service_fee.into(),
             price.total_price.into(),
-            OrderStatus::Pending.to_string().into(),
+            OrderStatus::Reserving.to_string().into(),
             serde_json::to_value(req.shipping_address).unwrap().into(),
             req.note_to_jastiper.unwrap_or_default().into(),
             now.into(),
             now.into(),
+            expired_at.into(),
         ])
         .build_sqlx(PostgresQueryBuilder);
 
@@ -203,9 +208,9 @@ pub async fn create(
     order_status_history_repo
         .insert_status_history(
             order_id,
-            &OrderStatus::Pending,
+            &OrderStatus::Reserving,
             &titipers_id.to_string(),
-            &Role::Titipers,
+            &Role::System,
             Some("Pesanan berhasil dibuat"),
         )
         .await?;
@@ -266,4 +271,46 @@ pub async fn delete(pool: &PgPool, order_id: Uuid) -> Result<()> {
 
     sqlx::query_with(&sql, values).execute(pool).await?;
     Ok(())
+}
+
+pub async fn find_expired_pending_orders(pool: &PgPool) -> Result<Vec<Order>> {
+    let now = Utc::now();
+
+    let (sql, values) = Query::select()
+        .columns([
+            OrderIden::OrderId,
+            OrderIden::TitipersId,
+            OrderIden::JastiperId,
+            OrderIden::ProductId,
+            OrderIden::ProductSnapshot,
+            OrderIden::Quantity,
+            OrderIden::UnitPrice,
+            OrderIden::ServiceFee,
+            OrderIden::TotalPrice,
+            OrderIden::Status,
+            OrderIden::ShippingAddress,
+            OrderIden::NoteToJastiper,
+            OrderIden::TrackingNumber,
+            OrderIden::Courier,
+            OrderIden::CancellationReason,
+            OrderIden::CancelledBy,
+            OrderIden::CompletedAt,
+            OrderIden::CreatedAt,
+            OrderIden::UpdatedAt,
+            OrderIden::ExpiredAt,
+        ])
+        .from(OrderIden::Order)
+        .and_where(
+            Expr::col(OrderIden::Status)
+                .cast_as(Alias::new("TEXT"))
+                .eq(OrderStatus::Pending.to_string()),
+        )
+        .and_where(Expr::col(OrderIden::ExpiredAt).lt(now))
+        .build_sqlx(PostgresQueryBuilder);
+
+    let orders = sqlx::query_as_with::<_, Order, _>(&sql, values)
+        .fetch_all(pool)
+        .await?;
+
+    Ok(orders)
 }

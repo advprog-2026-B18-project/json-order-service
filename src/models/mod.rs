@@ -1,4 +1,5 @@
 #![allow(dead_code)]
+pub mod checkout_request;
 pub mod filter_pagination;
 pub mod order;
 pub mod order_state;

@@ -262,7 +262,7 @@ pub(crate) async fn confirm_order_received(
                 "❌ [inventory] confirm_order_received unexpected status={} product_id={}",
                 code, product_id
             );
-            Err(AppError::Internal)
+            Ok(())
         }
     }
 }

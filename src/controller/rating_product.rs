@@ -1,6 +1,6 @@
 use axum::{
     Json,
-    extract::{Path, State},
+    extract::{Path, Query, State},
 };
 use reqwest::StatusCode;
 use serde_json::json;
@@ -10,6 +10,7 @@ use validator::Validate;
 
 use crate::error::AppError;
 use crate::middleware::auth::JwtClaims;
+use crate::models::filter_pagination::PaginationParams;
 use crate::models::rating_product::CreateRatingProductRequest;
 use crate::services::rating_product as svc;
 use crate::state::AppState;
@@ -46,6 +47,32 @@ pub async fn submit_rating_product(
             }
         })),
     ))
+}
+
+// GET /products/{product_id}/ratings (public — no auth)
+pub async fn get_ratings_by_product(
+    State(state): State<Arc<AppState>>,
+    Path(product_id): Path<Uuid>,
+    Query(params): Query<PaginationParams>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let (ratings, total, average) =
+        svc::get_ratings_by_product(Arc::clone(&state.rating_product_repo), product_id, &params)
+            .await?;
+
+    let page = params.page.unwrap_or(1).max(1);
+    let limit = params.limit.unwrap_or(20).min(100);
+
+    Ok(Json(json!({
+        "success": true,
+        "message": "Daftar rating produk ditemukan",
+        "data": {
+            "ratings": ratings,
+            "page": page,
+            "limit": limit,
+            "total": total,
+            "average_rating": average,
+        }
+    })))
 }
 
 // GET /orders/{order_id}/rating/product

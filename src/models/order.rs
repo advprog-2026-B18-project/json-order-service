@@ -32,6 +32,7 @@ pub enum OrderIden {
     CompletedAt,
     CreatedAt,
     UpdatedAt,
+    ExpiredAt,
 }
 
 #[derive(Debug, Serialize, Deserialize, sqlx::FromRow, ToSchema, Clone, Default)]
@@ -55,9 +56,10 @@ pub struct Order {
     pub completed_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    pub expired_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Deserialize, ToSchema, Validate, Clone)]
+#[derive(Debug, Deserialize, Serialize, ToSchema, Validate, Clone)]
 pub struct CreateOrderRequest {
     pub product_id: Uuid,
     #[validate(range(min = 1))]

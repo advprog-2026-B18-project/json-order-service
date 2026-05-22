@@ -40,6 +40,7 @@ fn make_order(order_id: Uuid, titipers_id: Uuid, jastiper_id: Uuid, status: Orde
         completed_at: None,
         created_at: chrono::Utc::now(),
         updated_at: chrono::Utc::now(),
+        expired_at: chrono::Utc::now(),
     }
 }
 
@@ -340,6 +341,65 @@ async fn release_stock_name() {
         inventory_client: Arc::new(inv),
     };
     assert_eq!(step.name(), "release_stock");
+}
+
+// === Error Path: update fails ===
+
+#[tokio::test]
+async fn update_status_to_refunding_execute_update_fails_returns_error() {
+    let titipers_id = Uuid::new_v4();
+    let jastiper_id = Uuid::new_v4();
+    let order_id = Uuid::new_v4();
+
+    let paid_order = make_order(order_id, titipers_id, jastiper_id, OrderStatus::Paid);
+
+    let mut repo = MockOrderRepository::new();
+    let paid_clone = paid_order.clone();
+    repo.expect_find_by_id()
+        .returning(move |_| Ok(Some(paid_clone.clone())));
+    repo.expect_update()
+        .returning(|_, _, _| Err(AppError::Internal));
+
+    let step = UpdateStatusToRefundingStep {
+        order_repo: Arc::new(repo),
+    };
+
+    let mut ctx = make_cancel_ctx(
+        order_id,
+        titipers_id,
+        jastiper_id,
+        Role::Jastiper,
+        OrderStatus::Paid,
+    );
+    let result = step.execute(&mut ctx).await;
+    assert!(matches!(result, Err(AppError::Internal)));
+    assert!(!ctx.status_set_to_refunding);
+}
+
+#[tokio::test]
+async fn update_status_to_refunding_compensate_update_fails_returns_error() {
+    let titipers_id = Uuid::new_v4();
+    let order_id = Uuid::new_v4();
+
+    let mut repo = MockOrderRepository::new();
+    repo.expect_update()
+        .returning(|_, _, _| Err(AppError::Internal));
+
+    let step = UpdateStatusToRefundingStep {
+        order_repo: Arc::new(repo),
+    };
+
+    let mut ctx = make_cancel_ctx(
+        order_id,
+        titipers_id,
+        Uuid::new_v4(),
+        Role::System,
+        OrderStatus::Pending,
+    );
+    ctx.status_set_to_refunding = true;
+
+    let result = step.compensate(&mut ctx).await;
+    assert!(matches!(result, Err(AppError::Internal)));
 }
 
 // ──────────────────────────────────────────────────────────────

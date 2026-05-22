@@ -82,7 +82,7 @@ mod tests {
         assert_eq!(created.unit_price, 25_000);
         assert_eq!(created.service_fee, 2_000);
         assert_eq!(created.total_price, 52_000);
-        assert_eq!(created.status, OrderStatus::Pending);
+        assert_eq!(created.status, OrderStatus::Reserving);
         assert!(created.tracking_number.is_none());
         assert!(created.completed_at.is_none());
     }
@@ -145,7 +145,7 @@ mod tests {
         assert!(!history.is_empty());
         assert_eq!(
             history[0].status,
-            OrderStatus::Pending.to_string().parse().unwrap()
+            OrderStatus::Reserving.to_string().parse().unwrap()
         );
         assert_eq!(history[0].changed_by, titipers_id.to_string());
     }

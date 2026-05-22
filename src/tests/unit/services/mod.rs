@@ -1,6 +1,10 @@
-pub mod http_client_service_test;
+mod admin_service_test;
+pub mod bug_auto_cancel_race;
+pub mod bug_double_saga_execution;
+pub mod bug_reserving_timeout;
+mod http_client_service_test;
 pub mod implements;
-pub mod order_internal_service_test;
-pub mod order_service_test;
-pub mod rating_jastiper_service_test;
-pub mod rating_product_service_test;
+mod order_internal_service_test;
+mod order_service_test;
+mod rating_jastiper_service_test;
+mod rating_product_service_test;
