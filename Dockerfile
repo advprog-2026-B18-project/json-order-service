@@ -4,7 +4,11 @@ FROM rust:1.88-slim AS builder
 RUN apt-get update && apt-get install -y \
     pkg-config \
     libssl-dev \
+    curl \
+    unzip \
     && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
 
 WORKDIR /app
 
