@@ -18,3 +18,4 @@ impl AuthClient for HttpAuthClient {
         send_jastiper_rating(jastiper_id, order_id, rating, review).await
     }
 }
+
