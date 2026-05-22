@@ -7,8 +7,8 @@ use deadpool_lapin::{Config, Runtime};
 use json_order_service::db;
 use json_order_service::infrastructure::publisher::RabbitMqCheckoutPublisher;
 use json_order_service::infrastructure::worker::run_worker;
-use json_order_service::repositories::adapters::idempotency_adapt::PgIdempotencyRepository;
 use json_order_service::metrics::{MetricsState, metrics_handler};
+use json_order_service::repositories::adapters::idempotency_adapt::PgIdempotencyRepository;
 use json_order_service::repositories::adapters::order_adapt::PgOrderRepository;
 use json_order_service::repositories::adapters::order_status_history_adapt::PgOrderStatusHistoryRepository;
 use json_order_service::repositories::adapters::rating_jastiper_adapt::PgRatingJastiperRepository;
@@ -94,7 +94,6 @@ async fn main() {
     dotenvy::dotenv().ok();
 
     let metrics_state = setup_metrics();
-
 
     // ── DB pool ───────────────────────────────────────────────────
     let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL harus diset di .env");

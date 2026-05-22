@@ -1,8 +1,8 @@
 pub mod controller;
 pub mod db;
 pub mod error;
-pub mod metrics;
 pub mod infrastructure;
+pub mod metrics;
 pub mod middleware;
 pub mod models;
 pub mod orchestrator;
