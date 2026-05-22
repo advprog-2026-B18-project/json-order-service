@@ -53,7 +53,6 @@ argon2       = "0.5.3"
 
 # Validasi
 validator = { version = "0.18", features = ["derive"] }
-repo = "0.14.6"
 
 # Client Request
 reqwest = { version = "0.12", features = ["json"] }
@@ -69,6 +68,10 @@ mockito = "1.7.2"
 metrics = "0.23"
 metrics-exporter-prometheus = "0.15"
 metrics-process = "2.1"          # process metrics: CPU, memory, FDs
+# Queueing
+lapin = "2.3"
+deadpool-lapin = { version = "0.12", features = ["rt_tokio_1"] }
+futures-lite = "2.6.1"
 
 [dev-dependencies]
 # Srialisasi

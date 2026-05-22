@@ -4,6 +4,7 @@ use serde_json::json;
 use uuid::Uuid;
 
 use crate::error::AppError;
+use crate::infrastructure::publisher::MockCheckoutPublisher;
 use crate::models::filter_pagination::{OrderQueryParams, PaginationParams};
 use crate::models::order::{
     CancelRequest, CreateOrderRequest, Order, ShippedRequest, UpdateStatusRequest,
@@ -44,6 +45,7 @@ fn make_order(order_id: Uuid, titipers_id: Uuid, jastiper_id: Uuid, status: Orde
         completed_at: None,
         created_at: chrono::Utc::now(),
         updated_at: chrono::Utc::now(),
+        expired_at: chrono::Utc::now(),
     }
 }
 
@@ -77,6 +79,12 @@ fn make_order_query_params() -> OrderQueryParams {
     }
 }
 
+fn make_checkout_publisher_ok() -> MockCheckoutPublisher {
+    let mut publisher = MockCheckoutPublisher::new();
+    publisher.expect_publish().returning(|_| Ok(()));
+    publisher
+}
+
 // ──────────────────────────────────────────────────────────────
 // checkout
 // ──────────────────────────────────────────────────────────────
@@ -88,7 +96,7 @@ async fn checkout_sukses() {
     let product_id = Uuid::new_v4();
 
     let mut inv = MockInventoryClient::new();
-    let mut wallet = MockWalletClient::new();
+    let publisher = make_checkout_publisher_ok();
     let mut repo = MockOrderRepository::new();
 
     let product_json = json!({
@@ -104,8 +112,6 @@ async fn checkout_sukses() {
 
     inv.expect_fetch_product()
         .returning(move |_| Ok(product_json.clone()));
-    inv.expect_reserve_stock().returning(|_, _, _| Ok(()));
-    wallet.expect_check_wallet().returning(|_, _| Ok(()));
 
     let expected_order = make_order(
         Uuid::new_v4(),
@@ -120,7 +126,7 @@ async fn checkout_sukses() {
     let result = order::checkout(
         Arc::new(repo),
         Arc::new(inv),
-        Arc::new(wallet),
+        Arc::new(publisher),
         titipers_id,
         req,
     )
@@ -135,7 +141,7 @@ async fn checkout_gagal_jastiper_beli_produk_sendiri() {
     let product_id = Uuid::new_v4();
 
     let mut inv = MockInventoryClient::new();
-    let wallet = MockWalletClient::new();
+    let publisher = MockCheckoutPublisher::new();
     let repo = MockOrderRepository::new();
 
     let product_json = json!({
@@ -151,7 +157,7 @@ async fn checkout_gagal_jastiper_beli_produk_sendiri() {
     let result = order::checkout(
         Arc::new(repo),
         Arc::new(inv),
-        Arc::new(wallet),
+        Arc::new(publisher),
         user_id,
         req,
     )
@@ -166,7 +172,7 @@ async fn checkout_gagal_fetch_product_error() {
     let product_id = Uuid::new_v4();
 
     let mut inv = MockInventoryClient::new();
-    let wallet = MockWalletClient::new();
+    let publisher = MockCheckoutPublisher::new();
     let repo = MockOrderRepository::new();
 
     inv.expect_fetch_product()
@@ -176,7 +182,7 @@ async fn checkout_gagal_fetch_product_error() {
     let result = order::checkout(
         Arc::new(repo),
         Arc::new(inv),
-        Arc::new(wallet),
+        Arc::new(publisher),
         titipers_id,
         req,
     )
@@ -191,7 +197,7 @@ async fn checkout_gagal_jastiper_id_tidak_valid_di_product() {
     let product_id = Uuid::new_v4();
 
     let mut inv = MockInventoryClient::new();
-    let wallet = MockWalletClient::new();
+    let publisher = MockCheckoutPublisher::new();
     let repo = MockOrderRepository::new();
 
     // jastiper.user_id bukan UUID valid → parse error → AppError::Internal
@@ -208,7 +214,7 @@ async fn checkout_gagal_jastiper_id_tidak_valid_di_product() {
     let result = order::checkout(
         Arc::new(repo),
         Arc::new(inv),
-        Arc::new(wallet),
+        Arc::new(publisher),
         titipers_id,
         req,
     )
@@ -218,14 +224,14 @@ async fn checkout_gagal_jastiper_id_tidak_valid_di_product() {
 }
 
 #[tokio::test]
-async fn checkout_gagal_check_wallet_error() {
+async fn checkout_gagal_publish_error() {
     let titipers_id = Uuid::new_v4();
     let jastiper_id = Uuid::new_v4();
     let product_id = Uuid::new_v4();
 
     let mut inv = MockInventoryClient::new();
-    let mut wallet = MockWalletClient::new();
-    let repo = MockOrderRepository::new();
+    let mut publisher = MockCheckoutPublisher::new();
+    let mut repo = MockOrderRepository::new();
 
     let product_json = json!({
         "jastiper": { "user_id": jastiper_id },
@@ -235,17 +241,23 @@ async fn checkout_gagal_check_wallet_error() {
 
     inv.expect_fetch_product()
         .returning(move |_| Ok(product_json.clone()));
-    wallet.expect_check_wallet().returning(|_, _| {
-        Err(AppError::UnprocessableEntity(
-            "Saldo tidak cukup".to_string(),
-        ))
-    });
+    let expected_order = make_order(
+        Uuid::new_v4(),
+        titipers_id,
+        jastiper_id,
+        OrderStatus::Reserving,
+    );
+    repo.expect_create()
+        .returning(move |_, _, _, _, _| Ok(expected_order.clone()));
+    publisher
+        .expect_publish()
+        .returning(|_| Err(AppError::Internal));
 
     let req = make_create_request(product_id);
     let result = order::checkout(
         Arc::new(repo),
         Arc::new(inv),
-        Arc::new(wallet),
+        Arc::new(publisher),
         titipers_id,
         req,
     )
@@ -261,7 +273,7 @@ async fn checkout_gagal_create_order_error() {
     let product_id = Uuid::new_v4();
 
     let mut inv = MockInventoryClient::new();
-    let mut wallet = MockWalletClient::new();
+    let publisher = make_checkout_publisher_ok();
     let mut repo = MockOrderRepository::new();
 
     let product_json = json!({
@@ -272,7 +284,6 @@ async fn checkout_gagal_create_order_error() {
 
     inv.expect_fetch_product()
         .returning(move |_| Ok(product_json.clone()));
-    wallet.expect_check_wallet().returning(|_, _| Ok(()));
     repo.expect_create()
         .returning(|_, _, _, _, _| Err(AppError::Internal));
 
@@ -280,7 +291,7 @@ async fn checkout_gagal_create_order_error() {
     let result = order::checkout(
         Arc::new(repo),
         Arc::new(inv),
-        Arc::new(wallet),
+        Arc::new(publisher),
         titipers_id,
         req,
     )
@@ -1123,4 +1134,167 @@ async fn my_sales_gagal_db_error() {
 
     let result = order::my_sales(Arc::new(repo), Uuid::new_v4(), make_order_query_params()).await;
     assert!(result.is_err());
+}
+
+// === Error Path ===
+
+#[tokio::test]
+async fn test_update_status_find_by_id_db_error_returns_error() {
+    // Arrange
+    let mut repo = MockOrderRepository::new();
+    repo.expect_find_by_id()
+        .returning(|_| Err(AppError::Internal));
+    let req = UpdateStatusRequest {
+        status: OrderStatus::Purchased,
+        notes: None,
+        tracking_number: None,
+        courier: None,
+        cancellation_reason: None,
+    };
+
+    // Act
+    let result = order::update_status(
+        Arc::new(repo),
+        Uuid::new_v4(),
+        Uuid::new_v4(),
+        &Role::Jastiper,
+        req,
+    )
+    .await;
+
+    // Assert
+    assert!(matches!(result, Err(AppError::Internal)));
+}
+
+#[tokio::test]
+async fn test_update_status_update_db_error_returns_error() {
+    // Arrange
+    let titipers_id = Uuid::new_v4();
+    let jastiper_id = Uuid::new_v4();
+    let order_id = Uuid::new_v4();
+    let mut repo = MockOrderRepository::new();
+    let order = make_order(order_id, titipers_id, jastiper_id, OrderStatus::Paid);
+    repo.expect_find_by_id()
+        .returning(move |_| Ok(Some(order.clone())));
+    repo.expect_update()
+        .returning(|_, _, _| Err(AppError::Internal));
+    let req = UpdateStatusRequest {
+        status: OrderStatus::Purchased,
+        notes: None,
+        tracking_number: None,
+        courier: None,
+        cancellation_reason: None,
+    };
+
+    // Act
+    let result =
+        order::update_status(Arc::new(repo), order_id, jastiper_id, &Role::Jastiper, req).await;
+
+    // Assert
+    assert!(matches!(result, Err(AppError::Internal)));
+}
+
+#[tokio::test]
+async fn test_cancel_status_find_by_id_db_error_returns_error() {
+    // Arrange
+    let mut repo = MockOrderRepository::new();
+    repo.expect_find_by_id()
+        .returning(|_| Err(AppError::Internal));
+    let req = UpdateStatusRequest {
+        status: OrderStatus::Cancelled,
+        notes: None,
+        tracking_number: None,
+        courier: None,
+        cancellation_reason: Some("cancel".to_string()),
+    };
+
+    // Act
+    let result = order::cancel_status(
+        Arc::new(repo),
+        Uuid::new_v4(),
+        Uuid::new_v4(),
+        &Role::Admin,
+        req,
+    )
+    .await;
+
+    // Assert
+    assert!(matches!(result, Err(AppError::Internal)));
+}
+
+#[tokio::test]
+async fn test_cancel_status_update_db_error_returns_error() {
+    // Arrange
+    let titipers_id = Uuid::new_v4();
+    let jastiper_id = Uuid::new_v4();
+    let order_id = Uuid::new_v4();
+    let mut repo = MockOrderRepository::new();
+    let order = make_order(order_id, titipers_id, jastiper_id, OrderStatus::Pending);
+    repo.expect_find_by_id()
+        .returning(move |_| Ok(Some(order.clone())));
+    repo.expect_update()
+        .returning(|_, _, _| Err(AppError::Internal));
+    let req = UpdateStatusRequest {
+        status: OrderStatus::Cancelled,
+        notes: None,
+        tracking_number: None,
+        courier: None,
+        cancellation_reason: Some("cancel".to_string()),
+    };
+
+    // Act
+    let result =
+        order::cancel_status(Arc::new(repo), order_id, jastiper_id, &Role::Admin, req).await;
+
+    // Assert
+    assert!(matches!(result, Err(AppError::Internal)));
+}
+
+#[tokio::test]
+async fn test_confirm_order_find_by_id_db_error_returns_error() {
+    // Arrange
+    let mut repo = MockOrderRepository::new();
+    repo.expect_find_by_id()
+        .returning(|_| Err(AppError::Internal));
+
+    // Act
+    let result = order::confirm_order(
+        Arc::new(repo),
+        Arc::new(MockWalletClient::new()),
+        Arc::new(MockInventoryClient::new()),
+        Uuid::new_v4(),
+        Uuid::new_v4(),
+    )
+    .await;
+
+    // Assert
+    assert!(matches!(result, Err(AppError::Internal)));
+}
+
+#[tokio::test]
+async fn test_get_order_history_history_repo_error_returns_error() {
+    // Arrange
+    let titipers_id = Uuid::new_v4();
+    let jastiper_id = Uuid::new_v4();
+    let order_id = Uuid::new_v4();
+    let mut repo = MockOrderRepository::new();
+    let mut history_repo = MockOrderStatusHistoryRepository::new();
+    let order = make_order(order_id, titipers_id, jastiper_id, OrderStatus::Pending);
+    repo.expect_find_by_id()
+        .returning(move |_| Ok(Some(order.clone())));
+    history_repo
+        .expect_get_status_history()
+        .returning(|_| Err(AppError::Internal));
+
+    // Act
+    let result = order::get_order_history(
+        Arc::new(repo),
+        Arc::new(history_repo),
+        order_id,
+        titipers_id,
+    )
+    .await;
+
+    // Assert
+    assert!(matches!(result, Err(AppError::Internal)));
 }

@@ -4,6 +4,7 @@ use uuid::Uuid;
 use validator::Validate;
 
 use crate::error::AppError;
+use crate::models::filter_pagination::PaginationParams;
 use crate::models::order_state::OrderStatus;
 use crate::models::rating_jastiper::{CreateRatingJastiperRequest, RatingJastiper};
 use crate::repositories::order_repository::OrderRepository;
@@ -146,4 +147,33 @@ pub async fn get_rating(
             );
             AppError::NotFound("Rating jastiper belum ada untuk pesanan ini".to_string())
         })
+}
+
+pub async fn get_ratings_by_jastiper(
+    rating_jastiper_repo: Arc<dyn RatingJastiperRepository + Send + Sync>,
+    jastiper_id: Uuid,
+    pagination: &PaginationParams,
+) -> Result<(Vec<RatingJastiper>, i64, f64), AppError> {
+    debug!(
+        "🔍 [get_ratings_by_jastiper] jastiper_id={} page={:?} limit={:?}",
+        jastiper_id, pagination.page, pagination.limit
+    );
+
+    let (ratings, total) = rating_jastiper_repo
+        .find_all_by_jastiper_id(jastiper_id, pagination)
+        .await?;
+
+    let average = if ratings.is_empty() {
+        0.0
+    } else {
+        let sum: f64 = ratings.iter().map(|r| r.jastiper_rating).sum();
+        (sum / ratings.len() as f64 * 10.0).round() / 10.0
+    };
+
+    info!(
+        "✅ [get_ratings_by_jastiper] jastiper_id={} total={} avg={}",
+        jastiper_id, total, average
+    );
+
+    Ok((ratings, total, average))
 }

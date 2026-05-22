@@ -81,4 +81,8 @@ impl OrderRepository for PgOrderRepository {
     async fn delete(&self, order_id: Uuid) -> crate::error::Result<()> {
         order_repo::delete(&self.pool, order_id).await
     }
+
+    async fn find_expired_pending_orders(&self) -> crate::error::Result<Vec<Order>> {
+        order_repo::find_expired_pending_orders(&self.pool).await
+    }
 }

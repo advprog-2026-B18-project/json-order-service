@@ -52,6 +52,14 @@ pub fn create_app(state: Arc<AppState>) -> Router {
             "/orders/:order_id/rating/product",
             post(controller::rating_product::submit_rating_product),
         )
+        .route(
+            "/products/:product_id/ratings",
+            get(controller::rating_product::get_ratings_by_product),
+        )
+        .route(
+            "/jastipers/:jastiper_id/ratings",
+            get(controller::rating_jastiper::get_ratings_by_jastiper),
+        )
         // INTERNAL
         .route(
             "/internal/orders/:order_id/payment-info",

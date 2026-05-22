@@ -4,6 +4,7 @@ use uuid::Uuid;
 use validator::Validate;
 
 use crate::error::AppError;
+use crate::models::filter_pagination::PaginationParams;
 use crate::models::order_status_history::OrderStatus;
 use crate::models::rating_product::{CreateRatingProductRequest, RatingProduct};
 use crate::repositories::order_repository::OrderRepository;
@@ -152,4 +153,33 @@ pub async fn get_rating(
             );
             AppError::NotFound("Rating belum ada untuk pesanan ini".to_string())
         })
+}
+
+pub async fn get_ratings_by_product(
+    rating_product_repo: Arc<dyn RatingProductRepository + Send + Sync>,
+    product_id: Uuid,
+    pagination: &PaginationParams,
+) -> Result<(Vec<RatingProduct>, i64, f64), AppError> {
+    debug!(
+        "🔍 [get_ratings_by_product] product_id={} page={:?} limit={:?}",
+        product_id, pagination.page, pagination.limit
+    );
+
+    let (ratings, total) = rating_product_repo
+        .find_all_by_product_id(product_id, pagination)
+        .await?;
+
+    let average = if ratings.is_empty() {
+        0.0
+    } else {
+        let sum: f64 = ratings.iter().map(|r| r.product_rating).sum();
+        (sum / ratings.len() as f64 * 10.0).round() / 10.0
+    };
+
+    info!(
+        "✅ [get_ratings_by_product] product_id={} total={} avg={}",
+        product_id, total, average
+    );
+
+    Ok((ratings, total, average))
 }
