@@ -36,6 +36,7 @@ fn make_order(order_id: Uuid, titipers_id: Uuid, jastiper_id: Uuid, status: Orde
         completed_at: None,
         created_at: chrono::Utc::now(),
         updated_at: chrono::Utc::now(),
+        expired_at: chrono::Utc::now(),
     }
 }
 

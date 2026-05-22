@@ -7,6 +7,8 @@ use serde_json::Value;
 use std::sync::Arc;
 use tower::ServiceExt;
 
+use crate::infrastructure::publisher::MockCheckoutPublisher;
+use crate::repositories::idempotency_repository::MockIdempotencyRepository;
 use crate::routes::create_app;
 use crate::state::AppState;
 
@@ -135,4 +137,24 @@ pub fn json_request_internal_post(
     };
 
     builder.body(body).unwrap()
+}
+
+pub fn dummy_mq_pool() -> deadpool_lapin::Pool {
+    let config = deadpool_lapin::Config {
+        url: Some("amqp://guest:guest@127.0.0.1:5672/%2f".to_string()),
+        ..Default::default()
+    };
+    config
+        .create_pool(Some(deadpool_lapin::Runtime::Tokio1))
+        .expect("dummy RabbitMQ pool should be constructible")
+}
+
+pub fn noop_checkout_publisher() -> MockCheckoutPublisher {
+    let mut publisher = MockCheckoutPublisher::new();
+    publisher.expect_publish().returning(|_| Ok(()));
+    publisher
+}
+
+pub fn noop_idempotency_repo() -> MockIdempotencyRepository {
+    MockIdempotencyRepository::new()
 }

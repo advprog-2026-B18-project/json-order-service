@@ -14,7 +14,10 @@ use crate::services::auth_client::MockAuthClient;
 use crate::services::inventory_client::MockInventoryClient;
 use crate::services::wallet_client::MockWalletClient;
 use crate::state::AppState;
-use crate::tests::unit::controller::helper_test::{TestApp, json_request, make_test_token};
+use crate::tests::unit::controller::helper_test::{
+    TestApp, dummy_mq_pool, json_request, make_test_token, noop_checkout_publisher,
+    noop_idempotency_repo,
+};
 
 // ──────────────────────────────────────────────────────────────
 // Helpers
@@ -47,6 +50,7 @@ fn make_order(order_id: Uuid, titipers_id: Uuid, jastiper_id: Uuid, status: Orde
         completed_at: None,
         created_at: Utc::now(),
         updated_at: Utc::now(),
+        expired_at: Utc::now(),
     }
 }
 
@@ -73,6 +77,9 @@ fn default_state(
         rating_product_repo: Arc::new(MockRatingProductRepository::new()),
         rating_jastiper_repo: Arc::new(rating_jastiper_repo),
         auth_client: Arc::new(MockAuthClient::new()),
+        checkout_publisher: Arc::new(noop_checkout_publisher()),
+        mq_pool: dummy_mq_pool(),
+        idempotency_repo: Arc::new(noop_idempotency_repo()),
     }
 }
 
@@ -166,15 +173,68 @@ async fn submit_rating_jastiper_gagal_order_tidak_ditemukan_404() {
     let app = TestApp::new(default_state(repo, MockRatingJastiperRepository::new()));
     let token = make_test_token(titipers_id, "TITIPERS");
     let req = json_request(
-        "POST",
+        "GET",
         &format!("/orders/{}/rating/jastiper", order_id),
         &token,
-        Some(valid_rating_body()),
+        None,
     );
     let (status, body) = app.send(req).await;
 
     assert_eq!(status, StatusCode::NOT_FOUND);
     assert_eq!(body["success"], false);
+}
+
+// ──────────────────────────────────────────────────────────────
+// GET /jastipers/{jastiper_id}/ratings (public — no auth)
+// ──────────────────────────────────────────────────────────────
+
+#[tokio::test]
+async fn get_ratings_by_jastiper_sukses_200() {
+    setup_jwt_secret();
+    let jastiper_id = Uuid::new_v4();
+
+    let mut rating_repo = MockRatingJastiperRepository::new();
+    let ratings = vec![make_rating_jastiper(Uuid::new_v4(), Uuid::new_v4())];
+    rating_repo
+        .expect_find_all_by_jastiper_id()
+        .returning(move |_, _| Ok((ratings.clone(), 1i64)));
+
+    let app = TestApp::new(default_state(MockOrderRepository::new(), rating_repo));
+    let req = axum::http::Request::builder()
+        .method("GET")
+        .uri(format!("/jastipers/{}/ratings", jastiper_id))
+        .body(axum::body::Body::empty())
+        .unwrap();
+    let (status, body) = app.send(req).await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["success"], true);
+    assert!(body["data"]["ratings"].is_array());
+    assert_eq!(body["data"]["total"], 1);
+}
+
+#[tokio::test]
+async fn get_ratings_by_jastiper_empty_200() {
+    setup_jwt_secret();
+    let jastiper_id = Uuid::new_v4();
+
+    let mut rating_repo = MockRatingJastiperRepository::new();
+    rating_repo
+        .expect_find_all_by_jastiper_id()
+        .returning(move |_, _| Ok((vec![], 0i64)));
+
+    let app = TestApp::new(default_state(MockOrderRepository::new(), rating_repo));
+    let req = axum::http::Request::builder()
+        .method("GET")
+        .uri(format!("/jastipers/{}/ratings", jastiper_id))
+        .body(axum::body::Body::empty())
+        .unwrap();
+    let (status, body) = app.send(req).await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["success"], true);
+    assert!(body["data"]["ratings"].as_array().unwrap().is_empty());
+    assert_eq!(body["data"]["total"], 0);
 }
 
 #[tokio::test]

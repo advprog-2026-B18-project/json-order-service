@@ -285,4 +285,174 @@ mod tests {
         )
         .await;
     }
+
+    // === Base64 padding edge cases ===
+
+    #[tokio::test]
+    async fn test_from_request_parts_secret_len_2mod4_padded_to_ab() {
+        // JWT_SECRET has b64 length 2 mod 4 → triggers "==" padding
+        temp_env::async_with_vars([("JWT_SECRET", Some("YQ"))], async {
+            let req = Request::builder()
+                .header("Authorization", "Bearer some.jwt.token")
+                .body(())
+                .unwrap();
+            let result = extract_claims(req).await;
+            // Decoding will fail because token doesn't match, but padding logic executes
+            assert!(result.is_err());
+        })
+        .await;
+    }
+
+    #[tokio::test]
+    async fn test_from_request_parts_secret_len_3mod4_padded_to_abc() {
+        // JWT_SECRET has b64 length 3 mod 4 → triggers padding by adding "="
+        temp_env::async_with_vars([("JWT_SECRET", Some("YWI"))], async {
+            let req = Request::builder()
+                .header("Authorization", "Bearer some.jwt.token")
+                .body(())
+                .unwrap();
+            let result = extract_claims(req).await;
+            assert!(result.is_err());
+        })
+        .await;
+    }
+
+    #[tokio::test]
+    async fn test_from_request_parts_secret_already_padded() {
+        // JWT_SECRET is already valid base64 with proper length
+        let b64_secret = base64::engine::general_purpose::STANDARD
+            .encode("my-test-secret-key-at-least-32-bytes!!");
+        let token = build_token(&default_claims(3600), &b64_secret);
+
+        temp_env::async_with_vars([("JWT_SECRET", Some(b64_secret.as_str()))], async move {
+            let req = Request::builder()
+                .header("Authorization", format!("Bearer {}", token))
+                .body(())
+                .unwrap();
+            let result = extract_claims(req).await;
+            assert!(result.is_ok());
+        })
+        .await;
+    }
+
+    #[warn(deprecated)]
+    #[tokio::test]
+    async fn test_from_request_parts_secret_ends_with_double_equal_adjusts_char() {
+        // Use a 2-char b64 string that after padding becomes "xx=="
+        // "YQ" → clean len=2 → padded to "YQ==" → triggers adjustment
+        let raw_secret = base64::engine::general_purpose::STANDARD
+            .decode("YQ==")
+            .unwrap();
+        let signing_secret = base64::engine::general_purpose::STANDARD.encode(&raw_secret);
+        let token = build_token(&default_claims(3600), &signing_secret);
+
+        temp_env::async_with_vars([("JWT_SECRET", Some("YQ"))], async move {
+            let req = Request::builder()
+                .header("Authorization", format!("Bearer {}", token))
+                .body(())
+                .unwrap();
+            let result = extract_claims(req).await;
+            assert!(result.is_ok());
+        })
+        .await;
+    }
+
+    #[tokio::test]
+    async fn test_from_request_parts_secret_with_default_change_me() {
+        // JWT_SECRET is not set → falls back to "change-me"
+        temp_env::async_with_vars([("JWT_SECRET", None::<&str>)], async {
+            let req = Request::builder()
+                .header("Authorization", "Bearer some.jwt.token")
+                .body(())
+                .unwrap();
+            let result = extract_claims(req).await;
+            // "change-me" has 9 chars, 9 % 4 = 1 → no padding
+            assert!(result.is_err());
+        })
+        .await;
+    }
+
+    // === From-parts tests (extracted from inline #[cfg(test)] in auth.rs) ===
+    use axum::http::request::Parts;
+
+    fn make_parts(auth_header: Option<&str>) -> Parts {
+        let mut builder = Request::builder();
+        if let Some(value) = auth_header {
+            builder = builder.header("Authorization", value);
+        }
+        let (parts, _) = builder.body(()).unwrap().into_parts();
+        parts
+    }
+
+    #[tokio::test]
+    async fn test_jwt_claims_missing_auth_header() {
+        let mut parts = make_parts(None);
+        let result = JwtClaims::from_request_parts(&mut parts, &()).await;
+        assert!(
+            matches!(result, Err(crate::error::AppError::Unauthorized(msg)) if msg.contains("tidak ditemukan"))
+        );
+    }
+
+    #[tokio::test]
+    async fn test_jwt_claims_bad_format_no_bearer_prefix() {
+        let mut parts = make_parts(Some("InvalidToken"));
+        let result = JwtClaims::from_request_parts(&mut parts, &()).await;
+        assert!(
+            matches!(result, Err(crate::error::AppError::Unauthorized(msg)) if msg.contains("Format token"))
+        );
+    }
+
+    #[tokio::test]
+    async fn test_jwt_claims_bad_format_typo_bearer() {
+        let mut parts = make_parts(Some("Bearr token"));
+        let result = JwtClaims::from_request_parts(&mut parts, &()).await;
+        assert!(
+            matches!(result, Err(crate::error::AppError::Unauthorized(msg)) if msg.contains("Format token"))
+        );
+    }
+
+    #[tokio::test]
+    async fn test_jwt_claims_invalid_token_signature() {
+        temp_env::async_with_vars(&[("JWT_SECRET", Some("dGVzdA"))], async {
+            let mut parts = make_parts(Some("Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwicm9sZSI6IkN1c3RvbWVyIn0.invalid"));
+            let result = JwtClaims::from_request_parts(&mut parts, &()).await;
+            assert!(matches!(result, Err(crate::error::AppError::Unauthorized(msg)) if msg.contains("Token tidak valid")));
+        }).await;
+    }
+
+    #[tokio::test]
+    async fn test_jwt_claims_invalid_base64_secret() {
+        temp_env::async_with_vars(&[("JWT_SECRET", Some("!!!"))], async {
+            let mut parts = make_parts(Some("Bearer dGVzdA"));
+            let result = JwtClaims::from_request_parts(&mut parts, &()).await;
+            assert!(matches!(result, Err(crate::error::AppError::Unauthorized(msg)) if msg.contains("JWT_SECRET tidak valid")));
+        }).await;
+    }
+
+    #[tokio::test]
+    async fn test_jwt_claims_valid_token_success() {
+        temp_env::async_with_vars(&[("JWT_SECRET", Some("dGVzdA"))], async {
+            let user_id = Uuid::new_v4();
+            let claims = JwtClaims {
+                sub: user_id.to_string(),
+                email: "test@test.com".to_string(),
+                role: "Customer".to_string(),
+                exp: (chrono::Utc::now() + chrono::Duration::minutes(60)).timestamp() as usize,
+                iat: chrono::Utc::now().timestamp() as usize,
+            };
+            let token = jsonwebtoken::encode(
+                &jsonwebtoken::Header::default(),
+                &claims,
+                &jsonwebtoken::EncodingKey::from_secret(b"test"),
+            )
+            .unwrap();
+
+            let mut parts = make_parts(Some(&format!("Bearer {}", token)));
+            let result = JwtClaims::from_request_parts(&mut parts, &()).await;
+
+            assert!(result.is_ok());
+            assert_eq!(result.unwrap().user_id().unwrap(), user_id);
+        })
+        .await;
+    }
 }
