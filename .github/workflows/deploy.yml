@@ -50,7 +50,7 @@ jobs:
           echo "INVENTORY_SERVICE_URL=$SERVICE_URL_INVENTORY" >> .env
           echo "USER_SERVICE_URL=$SERVICE_URL_AUTH" >> .env
           echo "WALLET_SERVICE_URL=$SERVICE_URL_PAYMENT" >> .env
-          echo "AMQP_URL=${secrets.AMQP_URL}" >> .env
+          echo "AMQP_URL=$AMQP_URL" >> .env
       
       # Copy docker-compose.yml and the newly generated .env via scp
       - name: Copy files via scp
