@@ -39,7 +39,7 @@ jobs:
 
       - name: Run Clippy
         env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SQLX_OFFLINE: true
         run: |
           cargo clippy --all-targets --all-features --message-format=json 2>/dev/null \
             | tee clippy-report.json || true
