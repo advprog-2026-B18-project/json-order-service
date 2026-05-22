@@ -1,3 +1,4 @@
+use crate::infrastructure::publisher::CheckoutPublisher;
 use crate::repositories::idempotency_repository::IdempotencyRepository;
 use crate::repositories::order_repository::OrderRepository;
 use crate::repositories::order_status_history_repository::OrderStatusHistoryRepository;
@@ -18,6 +19,7 @@ pub struct AppState {
     pub wallet_client: Arc<dyn WalletClient + Send + Sync>,
     pub auth_client: Arc<dyn AuthClient + Send + Sync>,
 
+    pub checkout_publisher: Arc<dyn CheckoutPublisher + Send + Sync>,
     pub mq_pool: Pool,
     pub idempotency_repo: Arc<dyn IdempotencyRepository + Send + Sync>,
 }

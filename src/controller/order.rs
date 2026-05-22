@@ -44,7 +44,7 @@ pub async fn checkout(
     let order = svc::checkout(
         Arc::clone(&state.order_repo),
         Arc::clone(&state.inventory_client),
-        &state.mq_pool,
+        Arc::clone(&state.checkout_publisher),
         claims.user_id()?,
         req,
     )

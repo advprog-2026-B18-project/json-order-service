@@ -11,8 +11,8 @@ use lapin::{
 use std::sync::Arc;
 use tracing::{error, info, warn};
 
-use crate::models::checkout_request::CheckoutRequest;
 use crate::error::AppError;
+use crate::models::checkout_request::CheckoutRequest;
 use crate::models::order::UpdateOrderParams;
 use crate::models::order_state::{OrderMachine, OrderStatus};
 use crate::models::role::Role;
@@ -181,6 +181,23 @@ async fn process_message(
         AppError::Internal
     })?;
 
+    process_checkout_request(
+        order_repo,
+        inventory_client,
+        wallet_client,
+        idempotency_repo,
+        request,
+    )
+    .await
+}
+
+pub(crate) async fn process_checkout_request(
+    order_repo: &Arc<dyn OrderRepository + Send + Sync>,
+    inventory_client: &Arc<dyn InventoryClient + Send + Sync>,
+    wallet_client: &Arc<dyn WalletClient + Send + Sync>,
+    idempotency_repo: &Arc<dyn IdempotencyRepository + Send + Sync>,
+    request: CheckoutRequest,
+) -> Result<(), AppError> {
     info!(
         "📨 [worker] processing order_id={} idempotency_key={}",
         request.order_id, request.idempotency_key

@@ -1,6 +1,7 @@
 use axum::Router;
 use deadpool_lapin::{Config, Runtime};
 use json_order_service::db;
+use json_order_service::infrastructure::publisher::RabbitMqCheckoutPublisher;
 use json_order_service::infrastructure::worker::run_worker;
 use json_order_service::repositories::adapters::idempotency_adapt::PgIdempotencyRepository;
 use json_order_service::repositories::adapters::order_adapt::PgOrderRepository;
@@ -29,8 +30,10 @@ async fn main() {
 
     // ── RabbitMQ pool ─────────────────────────────────────────────
     let amqp_url = std::env::var("AMQP_URL").expect("AMQP_URL harus diset di .env");
-    let mut mq_config = Config::default();
-    mq_config.url = Some(amqp_url);
+    let mq_config = Config {
+        url: Some(amqp_url),
+        ..Default::default()
+    };
     let mq_pool = mq_config
         .create_pool(Some(Runtime::Tokio1))
         .expect("gagal buat RabbitMQ pool");
@@ -51,6 +54,7 @@ async fn main() {
         inventory_client: Arc::new(HttpInventoryClient),
         wallet_client: Arc::new(HttpWalletClient),
         auth_client: Arc::new(HttpAuthClient),
+        checkout_publisher: Arc::new(RabbitMqCheckoutPublisher::new(mq_pool.clone())),
         mq_pool: mq_pool.clone(),
         idempotency_repo,
     });

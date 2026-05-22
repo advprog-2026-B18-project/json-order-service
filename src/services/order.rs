@@ -1,6 +1,6 @@
-use crate::models::checkout_request::CheckoutRequest;
 use crate::error::AppError;
-use crate::infrastructure::publisher::publish_checkout;
+use crate::infrastructure::publisher::CheckoutPublisher;
+use crate::models::checkout_request::CheckoutRequest;
 use crate::models::filter_pagination::{OrderFilter, OrderQueryParams};
 use crate::models::order::{
     CancelRequest, CreateOrderRequest, Order, PriceBreakdown, ShippedRequest, UpdateOrderParams,
@@ -30,7 +30,7 @@ use uuid::Uuid;
 pub async fn checkout(
     order_repo: Arc<dyn OrderRepository + Send + Sync>,
     inventory_client: Arc<dyn InventoryClient + Send + Sync>,
-    mq_pool: &deadpool_lapin::Pool,
+    checkout_publisher: Arc<dyn CheckoutPublisher + Send + Sync>,
     titipers_id: Uuid,
     req: CreateOrderRequest,
 ) -> Result<Order, AppError> {
@@ -57,7 +57,7 @@ pub async fn checkout(
         ));
     }
 
-    // 2. Hitung harga — harus sebelum create()
+    // 2. Hitung harga
     let unit_price = product["price"].as_i64().unwrap_or(0);
     let service_fee = product["service_fee"].as_i64().unwrap_or(0);
     let total_price = (unit_price + service_fee) * req.quantity as i64;
@@ -103,11 +103,12 @@ pub async fn checkout(
         idempotency_key: order.order_id,
     };
 
-    publish_checkout(mq_pool, &checkout_request)
+    checkout_publisher
+        .publish(&checkout_request)
         .await
         .map_err(|e| {
-            error!("❌ [checkout] publish ke queue gagal: {e}");
-            AppError::Internal
+            error!("❌ [checkout] publish ke queue gagal: {e:?}");
+            e
         })?;
 
     info!("✅ [checkout] order queued order_id={}", order.order_id);

@@ -6,7 +6,7 @@ use crate::error::AppError;
 use crate::repositories::idempotency_repository::IdempotencyRepository;
 
 pub struct PgIdempotencyRepository {
-    pool: PgPool,
+    pub(crate) pool: PgPool,
 }
 
 impl PgIdempotencyRepository {

@@ -1,4 +1,6 @@
+use crate::error::AppError;
 use crate::models::checkout_request::CheckoutRequest;
+use async_trait::async_trait;
 use deadpool_lapin::Pool;
 use lapin::{
     BasicProperties,
@@ -7,6 +9,32 @@ use lapin::{
 use tracing::log::info;
 
 const QUEUE_NAME: &str = "checkout_requests";
+
+#[cfg_attr(test, mockall::automock)]
+#[async_trait]
+pub trait CheckoutPublisher: Send + Sync {
+    async fn publish(&self, request: &CheckoutRequest) -> Result<(), AppError>;
+}
+
+pub struct RabbitMqCheckoutPublisher {
+    pool: Pool,
+}
+
+impl RabbitMqCheckoutPublisher {
+    pub fn new(pool: Pool) -> Self {
+        Self { pool }
+    }
+}
+
+#[async_trait]
+impl CheckoutPublisher for RabbitMqCheckoutPublisher {
+    async fn publish(&self, request: &CheckoutRequest) -> Result<(), AppError> {
+        publish_checkout(&self.pool, request).await.map_err(|e| {
+            tracing::error!("checkout publish failed: {e}");
+            AppError::Internal
+        })
+    }
+}
 
 pub async fn publish_checkout(
     pool: &Pool,
@@ -39,7 +67,7 @@ pub async fn publish_checkout(
         .await?
         .await?;
 
-    info!("{} {}", request.order_id.to_string(), "published to queue");
+    info!("{} {}", request.order_id, "published to queue");
 
     Ok(())
 }
