@@ -236,3 +236,17 @@ fn result_type_alias_err() {
     let r: Result<i32, AppError> = Err(AppError::Internal);
     assert!(r.is_err());
 }
+
+#[tokio::test]
+async fn response_insufficient_balance_is_402() {
+    use axum::response::IntoResponse;
+    let response = AppError::InsufficientBalance.into_response();
+    let status = response.status();
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(status, axum::http::StatusCode::PAYMENT_REQUIRED);
+    assert_eq!(body["success"], false);
+    assert_eq!(body["message"], "Insufficient balance");
+}

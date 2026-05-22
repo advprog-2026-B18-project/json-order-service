@@ -16,7 +16,8 @@ mod tests {
     use crate::services::wallet_client::MockWalletClient;
     use crate::state::AppState;
     use crate::tests::unit::controller::helper_test::{
-        TestApp, json_request_internal, json_request_internal_post,
+        TestApp, dummy_mq_pool, json_request_internal, json_request_internal_post,
+        noop_checkout_publisher, noop_idempotency_repo,
     };
 
     pub fn setup_service_key() {
@@ -54,6 +55,7 @@ mod tests {
             completed_at: None,
             created_at: Utc::now(),
             updated_at: Utc::now(),
+            expired_at: Utc::now(),
         }
     }
 
@@ -66,6 +68,9 @@ mod tests {
             rating_product_repo: Arc::new(MockRatingProductRepository::new()),
             rating_jastiper_repo: Arc::new(MockRatingJastiperRepository::new()),
             auth_client: Arc::new(MockAuthClient::new()),
+            checkout_publisher: Arc::new(noop_checkout_publisher()),
+            mq_pool: dummy_mq_pool(),
+            idempotency_repo: Arc::new(noop_idempotency_repo()),
         }
     }
 

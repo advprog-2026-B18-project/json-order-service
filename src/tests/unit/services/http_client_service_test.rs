@@ -78,3 +78,41 @@ async fn internal_get_gagal_url_tidak_valid() {
 
     assert!(result.is_err(), "Seharusnya error ketika URL tidak valid");
 }
+
+// === Error Path ===
+
+#[tokio::test]
+async fn test_internal_post_malformed_json_response_returns_internal() {
+    // Arrange
+    setup_env();
+    let server = wiremock::MockServer::start().await;
+    wiremock::Mock::given(wiremock::matchers::method("POST"))
+        .respond_with(wiremock::ResponseTemplate::new(200).set_body_string("not-json"))
+        .mount(&server)
+        .await;
+
+    // Act
+    let result =
+        crate::services::http_client::internal_post(&server.uri(), serde_json::json!({})).await;
+
+    // Assert
+    assert!(matches!(result, Err(crate::error::AppError::Internal)));
+}
+
+#[tokio::test]
+async fn test_internal_get_malformed_json_response_returns_internal() {
+    // Arrange
+    setup_env();
+    let server = wiremock::MockServer::start().await;
+    wiremock::Mock::given(wiremock::matchers::method("GET"))
+        .respond_with(wiremock::ResponseTemplate::new(200).set_body_string("not-json"))
+        .mount(&server)
+        .await;
+
+    // Act
+    let result =
+        crate::services::http_client::internal_get(&server.uri(), serde_json::json!({})).await;
+
+    // Assert
+    assert!(matches!(result, Err(crate::error::AppError::Internal)));
+}

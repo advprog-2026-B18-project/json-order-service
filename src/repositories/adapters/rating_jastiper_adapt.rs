@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 use uuid::Uuid;
 
+use crate::models::filter_pagination::PaginationParams;
 use crate::models::rating_jastiper::{CreateRatingJastiperRequest, RatingJastiper};
 use crate::repositories::implements::rating_jastiper_repo_impl as rating_jastiper_repo;
 use crate::repositories::rating_jastiper_repository::RatingJastiperRepository;
@@ -30,6 +31,14 @@ impl RatingJastiperRepository for PgRatingJastiperRepository {
         order_id: Uuid,
     ) -> crate::error::Result<Option<RatingJastiper>> {
         rating_jastiper_repo::find_by_order_id(&self.pool, order_id).await
+    }
+
+    async fn find_all_by_jastiper_id(
+        &self,
+        jastiper_id: Uuid,
+        pagination: &PaginationParams,
+    ) -> crate::error::Result<(Vec<RatingJastiper>, i64)> {
+        rating_jastiper_repo::find_all_by_jastiper_id(&self.pool, jastiper_id, pagination).await
     }
 
     async fn create(

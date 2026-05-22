@@ -12,6 +12,7 @@ use utoipa::ToSchema;
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum OrderStatus {
     #[default]
+    Reserving,
     Pending,
     Paid,
     Purchased,
@@ -25,6 +26,7 @@ pub enum OrderStatus {
 impl OrderStatus {
     pub fn as_str(&self) -> &'static str {
         match self {
+            OrderStatus::Reserving => "RESERVING",
             OrderStatus::Pending => "PENDING",
             OrderStatus::Paid => "PAID",
             OrderStatus::Purchased => "PURCHASED",
@@ -42,6 +44,7 @@ impl FromStr for OrderStatus {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
+            "RESERVING" => Ok(OrderStatus::Reserving),
             "PENDING" => Ok(OrderStatus::Pending),
             "PAID" => Ok(OrderStatus::Paid),
             "PURCHASED" => Ok(OrderStatus::Purchased),
@@ -102,6 +105,7 @@ impl OrderMachine {
 }
 
 // SELURUH STATE
+pub struct ReservingState;
 pub struct PendingState;
 pub struct PaidState;
 pub struct PurchasedState;
@@ -110,6 +114,30 @@ pub struct CompletedState;
 pub struct RefundingState;
 pub struct RefundFailedState;
 pub struct CancelledState;
+
+impl OrderState for ReservingState {
+    fn update_status(&self, role: &Role, next: &OrderStatus) -> Result<OrderStatus, AppError> {
+        match (next, role) {
+            (OrderStatus::Pending, Role::System) => Ok(OrderStatus::Pending),
+            _ => Err(AppError::Forbidden(
+                "Status RESERVING hanya bisa berubah ke PENDING oleh SYSTEM".to_string(),
+            )),
+        }
+    }
+
+    fn cancel(&self, role: &Role) -> Result<OrderStatus, AppError> {
+        match role {
+            Role::Jastiper | Role::Admin | Role::System => Ok(OrderStatus::Cancelled),
+            _ => Err(AppError::Forbidden(
+                "Hanya JASTIPER, ADMIN, atau SYSTEM yang bisa cancel order RESERVING".to_string(),
+            )),
+        }
+    }
+
+    fn current_status(&self) -> OrderStatus {
+        OrderStatus::Reserving
+    }
+}
 
 impl OrderState for PendingState {
     fn update_status(&self, role: &Role, next: &OrderStatus) -> Result<OrderStatus, AppError> {
@@ -297,6 +325,7 @@ impl OrderState for CancelledState {
 
 fn make_state(status: &OrderStatus) -> Box<dyn OrderState> {
     match status {
+        OrderStatus::Reserving => Box::new(ReservingState),
         OrderStatus::Pending => Box::new(PendingState),
         OrderStatus::Paid => Box::new(PaidState),
         OrderStatus::Purchased => Box::new(PurchasedState),
