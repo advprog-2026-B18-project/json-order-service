@@ -41,7 +41,6 @@ async fn test_metrics_endpoint_returns_200() {
     assert_eq!(response.status(), 200);
 }
 
-#[cfg(target_os = "linux")]
 #[tokio::test]
 async fn test_metrics_endpoint_contains_process_metrics() {
     let state = metrics_state().clone();
@@ -80,8 +79,10 @@ async fn test_metrics_endpoint_contains_process_metrics() {
         body_str.contains("process_virtual_memory_bytes"),
         "missing process_virtual_memory_bytes",
     );
-    assert!(
-        body_str.contains("process_open_fds"),
-        "missing process_open_fds",
-    );
+    if cfg!(target_os = "linux") {
+        assert!(
+            body_str.contains("process_open_fds"),
+            "missing process_open_fds",
+        );
+    }
 }
