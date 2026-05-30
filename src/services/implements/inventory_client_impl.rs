@@ -194,7 +194,7 @@ pub(crate) async fn send_product_rating(
         }
         404 => {
             debug!(
-                "⚠️ [inventory] produk tidak ditemukan product_id={} (non-fatal)",
+                "ℹ️ [inventory] produk tidak ditemukan product_id={} (non-fatal)",
                 product_id
             );
             Ok(())

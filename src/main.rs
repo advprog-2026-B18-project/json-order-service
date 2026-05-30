@@ -87,14 +87,14 @@ fn setup_metrics() -> MetricsState {
 
 #[tokio::main]
 async fn main() {
+    dotenvy::dotenv().ok();
+
     tracing_subscriber::fmt()
         .with_env_filter(
             std::env::var("RUST_LOG")
                 .unwrap_or_else(|_| "json_order_service=warn,tower_http=warn".to_string()),
         )
         .init();
-
-    dotenvy::dotenv().ok();
 
     let metrics_state = setup_metrics();
 
@@ -139,9 +139,12 @@ async fn main() {
         let order_repo = Arc::clone(&state.order_repo);
         let inventory = Arc::clone(&state.inventory_client);
         let wallet = Arc::clone(&state.wallet_client);
+        let auth_client = Arc::clone(&state.auth_client);
         let idempotency = Arc::clone(&state.idempotency_repo);
         tokio::spawn(async move {
-            if let Err(e) = run_worker(mq, order_repo, inventory, wallet, idempotency).await {
+            if let Err(e) =
+                run_worker(mq, order_repo, inventory, wallet, auth_client, idempotency).await
+            {
                 tracing::error!("worker crashed: {e}");
             }
         });

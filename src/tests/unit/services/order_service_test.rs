@@ -14,6 +14,7 @@ use crate::models::role::Role;
 use crate::models::shipping_address::ShippingAddress;
 use crate::repositories::order_repository::MockOrderRepository;
 use crate::repositories::order_status_history_repository::MockOrderStatusHistoryRepository;
+use crate::services::auth_client::MockAuthClient;
 use crate::services::inventory_client::MockInventoryClient;
 use crate::services::order;
 use crate::services::wallet_client::{
@@ -705,6 +706,7 @@ async fn confirm_order_sukses() {
     let mut repo = MockOrderRepository::new();
     let mut wallet = MockWalletClient::new();
     let mut inv = MockInventoryClient::new();
+    let mut auth = MockAuthClient::new();
 
     let order = make_order(order_id, titipers_id, jastiper_id, OrderStatus::Shipped);
     let completed = make_order(order_id, titipers_id, jastiper_id, OrderStatus::Completed);
@@ -719,11 +721,13 @@ async fn confirm_order_sukses() {
         })
     });
     inv.expect_confirm_order_received().returning(|_, _| Ok(()));
+    auth.expect_send_order_event().returning(|_, _| Ok(()));
 
     let result = order::confirm_order(
         Arc::new(repo),
         Arc::new(wallet),
         Arc::new(inv),
+        Arc::new(auth),
         titipers_id,
         order_id,
     )
@@ -741,6 +745,7 @@ async fn confirm_order_gagal_bukan_titipers_pemilik() {
     let mut repo = MockOrderRepository::new();
     let wallet = MockWalletClient::new();
     let inv = MockInventoryClient::new();
+    let auth = MockAuthClient::new();
 
     let order = make_order(order_id, titipers_id, jastiper_id, OrderStatus::Shipped);
     repo.expect_find_by_id()
@@ -750,6 +755,7 @@ async fn confirm_order_gagal_bukan_titipers_pemilik() {
         Arc::new(repo),
         Arc::new(wallet),
         Arc::new(inv),
+        Arc::new(auth),
         titipers_lain,
         order_id,
     )
@@ -766,6 +772,7 @@ async fn confirm_order_gagal_status_bukan_shipped() {
     let mut repo = MockOrderRepository::new();
     let wallet = MockWalletClient::new();
     let inv = MockInventoryClient::new();
+    let auth = MockAuthClient::new();
 
     let order = make_order(order_id, titipers_id, jastiper_id, OrderStatus::Paid);
     repo.expect_find_by_id()
@@ -775,6 +782,7 @@ async fn confirm_order_gagal_status_bukan_shipped() {
         Arc::new(repo),
         Arc::new(wallet),
         Arc::new(inv),
+        Arc::new(auth),
         titipers_id,
         order_id,
     )
@@ -787,17 +795,58 @@ async fn confirm_order_gagal_order_tidak_ditemukan() {
     let mut repo = MockOrderRepository::new();
     let wallet = MockWalletClient::new();
     let inv = MockInventoryClient::new();
+    let auth = MockAuthClient::new();
     repo.expect_find_by_id().returning(|_| Ok(None));
 
     let result = order::confirm_order(
         Arc::new(repo),
         Arc::new(wallet),
         Arc::new(inv),
+        Arc::new(auth),
         Uuid::new_v4(),
         Uuid::new_v4(),
     )
     .await;
     assert!(matches!(result, Err(AppError::NotFound(_))));
+}
+
+#[tokio::test]
+async fn confirm_order_gagal_send_order_event_warn() {
+    let titipers_id = Uuid::new_v4();
+    let jastiper_id = Uuid::new_v4();
+    let order_id = Uuid::new_v4();
+
+    let mut repo = MockOrderRepository::new();
+    let mut wallet = MockWalletClient::new();
+    let mut inv = MockInventoryClient::new();
+    let mut auth = MockAuthClient::new();
+
+    let order = make_order(order_id, titipers_id, jastiper_id, OrderStatus::Shipped);
+    let completed = make_order(order_id, titipers_id, jastiper_id, OrderStatus::Completed);
+    repo.expect_find_by_id()
+        .returning(move |_| Ok(Some(order.clone())));
+    repo.expect_update()
+        .returning(move |_, _, _| Ok(completed.clone()));
+
+    wallet.expect_earnings_wallet().returning(|_, _, _| {
+        Ok(EarningsResponse {
+            transaction_id: "txn-earn".to_string(),
+        })
+    });
+    inv.expect_confirm_order_received().returning(|_, _| Ok(()));
+    auth.expect_send_order_event()
+        .returning(|_, _| Err(AppError::Internal));
+
+    let result = order::confirm_order(
+        Arc::new(repo),
+        Arc::new(wallet),
+        Arc::new(inv),
+        Arc::new(auth),
+        titipers_id,
+        order_id,
+    )
+    .await;
+    assert!(result.is_ok());
 }
 
 // ──────────────────────────────────────────────────────────────
@@ -1262,6 +1311,7 @@ async fn test_confirm_order_find_by_id_db_error_returns_error() {
         Arc::new(repo),
         Arc::new(MockWalletClient::new()),
         Arc::new(MockInventoryClient::new()),
+        Arc::new(MockAuthClient::new()),
         Uuid::new_v4(),
         Uuid::new_v4(),
     )

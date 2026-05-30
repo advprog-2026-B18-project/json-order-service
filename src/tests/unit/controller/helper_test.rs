@@ -158,3 +158,42 @@ pub fn noop_checkout_publisher() -> MockCheckoutPublisher {
 pub fn noop_idempotency_repo() -> MockIdempotencyRepository {
     MockIdempotencyRepository::new()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn make_test_token_secret_len_0mod4() {
+        let user_id = uuid::Uuid::new_v4();
+        let token = make_test_token(user_id, "TITIPERS");
+        assert!(!token.is_empty());
+    }
+
+    #[test]
+    fn make_test_token_secret_len_2mod4() {
+        temp_env::with_vars([("JWT_SECRET", Some("dGVzdA"))], || {
+            let user_id = uuid::Uuid::new_v4();
+            let token = make_test_token(user_id, "JASTIPER");
+            assert!(!token.is_empty());
+        });
+    }
+
+    #[test]
+    fn make_test_token_secret_len_3mod4() {
+        temp_env::with_vars([("JWT_SECRET", Some("YWE"))], || {
+            let user_id = uuid::Uuid::new_v4();
+            let token = make_test_token(user_id, "ADMIN");
+            assert!(!token.is_empty());
+        });
+    }
+
+    #[test]
+    fn make_test_token_secret_ends_with_double_equal_adjusts_char() {
+        temp_env::with_vars([("JWT_SECRET", Some("YR"))], || {
+            let user_id = uuid::Uuid::new_v4();
+            let token = make_test_token(user_id, "SYSTEM");
+            assert!(!token.is_empty());
+        });
+    }
+}

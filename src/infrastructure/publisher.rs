@@ -5,10 +5,12 @@ use deadpool_lapin::Pool;
 use lapin::{
     BasicProperties, Channel,
     options::{BasicPublishOptions, QueueDeclareOptions},
+    types::AMQPValue,
 };
 use tracing::log::info;
 
 const QUEUE_NAME: &str = "checkout_requests";
+const DLX_NAME: &str = "checkout_requests_dlx";
 
 #[cfg_attr(test, mockall::automock)]
 #[async_trait]
@@ -37,16 +39,41 @@ impl RabbitMqCheckoutPublisher {
                 let conn = self.pool.get().await?;
                 let channel = conn.create_channel().await?;
 
-                channel
+                let dlx_args = {
+                    let mut args = lapin::types::FieldTable::default();
+                    args.insert(
+                        "x-dead-letter-exchange".into(),
+                        AMQPValue::LongString(DLX_NAME.into()),
+                    );
+                    args
+                };
+
+                if channel
                     .queue_declare(
                         QUEUE_NAME,
                         QueueDeclareOptions {
                             durable: true,
                             ..Default::default()
                         },
-                        Default::default(),
+                        dlx_args,
                     )
-                    .await?;
+                    .await
+                    .is_err()
+                {
+                    tracing::warn!(
+                        "[publisher] queue '{QUEUE_NAME}' sudah ada tanpa DLX, fallback"
+                    );
+                    channel
+                        .queue_declare(
+                            QUEUE_NAME,
+                            QueueDeclareOptions {
+                                durable: true,
+                                ..Default::default()
+                            },
+                            Default::default(),
+                        )
+                        .await?;
+                }
 
                 Ok(channel)
             })

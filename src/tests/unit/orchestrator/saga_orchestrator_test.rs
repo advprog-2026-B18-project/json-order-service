@@ -3,6 +3,13 @@ use async_trait::async_trait;
 use crate::error::AppError;
 use crate::orchestrator::{SagaOrchestrator, SagaStep};
 
+fn init_tracing() {
+    static INIT: std::sync::Once = std::sync::Once::new();
+    INIT.call_once(|| {
+        let _ = tracing_subscriber::fmt().try_init();
+    });
+}
+
 // ──────────────────────────────────────────────────────────────
 // Helper stubs
 // ──────────────────────────────────────────────────────────────
@@ -78,6 +85,7 @@ impl SagaStep for FailCompensateStep {
 
 #[tokio::test]
 async fn saga_sukses_semua_step_dieksekusi() {
+    init_tracing();
     let mut ctx = Ctx { log: vec![] };
     let saga = SagaOrchestrator::new("test")
         .step(OkStep("step1"))
@@ -95,6 +103,7 @@ async fn saga_sukses_semua_step_dieksekusi() {
 
 #[tokio::test]
 async fn saga_tanpa_step_sukses() {
+    init_tracing();
     let mut ctx = Ctx { log: vec![] };
     let saga: SagaOrchestrator<Ctx> = SagaOrchestrator::new("empty");
 
@@ -106,6 +115,7 @@ async fn saga_tanpa_step_sukses() {
 
 #[tokio::test]
 async fn saga_step_pertama_gagal_tidak_ada_kompensasi() {
+    init_tracing();
     let mut ctx = Ctx { log: vec![] };
     let saga = SagaOrchestrator::new("test")
         .step(FailStep("step1"))
@@ -120,6 +130,7 @@ async fn saga_step_pertama_gagal_tidak_ada_kompensasi() {
 
 #[tokio::test]
 async fn saga_step_kedua_gagal_kompensasi_step_pertama() {
+    init_tracing();
     let mut ctx = Ctx { log: vec![] };
     let saga = SagaOrchestrator::new("test")
         .step(OkStep("step1"))
@@ -138,6 +149,7 @@ async fn saga_step_kedua_gagal_kompensasi_step_pertama() {
 
 #[tokio::test]
 async fn saga_step_ketiga_gagal_kompensasi_step_dua_dan_satu_secara_terbalik() {
+    init_tracing();
     let mut ctx = Ctx { log: vec![] };
     let saga = SagaOrchestrator::new("test")
         .step(OkStep("step1"))
@@ -161,6 +173,7 @@ async fn saga_step_ketiga_gagal_kompensasi_step_dua_dan_satu_secara_terbalik() {
 
 #[tokio::test]
 async fn saga_rollback_kompensasi_gagal_tidak_stop_rollback() {
+    init_tracing();
     // Kompensasi yang gagal tidak boleh menghentikan proses rollback step lain
     let mut ctx = Ctx { log: vec![] };
     let saga = SagaOrchestrator::new("test")
@@ -179,6 +192,7 @@ async fn saga_rollback_kompensasi_gagal_tidak_stop_rollback() {
 
 #[tokio::test]
 async fn saga_satu_step_sukses() {
+    init_tracing();
     let mut ctx = Ctx { log: vec![] };
     let saga = SagaOrchestrator::new("single").step(OkStep("only"));
 
@@ -190,6 +204,7 @@ async fn saga_satu_step_sukses() {
 
 #[tokio::test]
 async fn saga_satu_step_gagal_tidak_ada_kompensasi() {
+    init_tracing();
     let mut ctx = Ctx { log: vec![] };
     let saga = SagaOrchestrator::new("single").step(FailStep("only"));
 

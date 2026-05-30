@@ -20,6 +20,7 @@ use crate::orchestrator::confirm_order_saga::{
 use crate::orchestrator::payment_saga::{DeductWalletStep, PaymentContext, UpdateStatusToPaidStep};
 use crate::repositories::order_repository::OrderRepository;
 use crate::repositories::order_status_history_repository::OrderStatusHistoryRepository;
+use crate::services::auth_client::AuthClient;
 use crate::services::inventory_client::InventoryClient;
 use crate::services::wallet_client::WalletClient;
 use std::sync::Arc;
@@ -353,6 +354,7 @@ pub async fn confirm_order(
     order_repo: Arc<dyn OrderRepository + Send + Sync>,
     wallet_client: Arc<dyn WalletClient + Send + Sync>,
     inventory_client: Arc<dyn InventoryClient + Send + Sync>,
+    auth_client: Arc<dyn AuthClient + Send + Sync>,
     titipers_id: Uuid,
     order_id: Uuid,
 ) -> Result<Order, AppError> {
@@ -405,6 +407,17 @@ pub async fn confirm_order(
         });
 
     saga.run(&mut ctx).await?;
+
+    // Notify auth service that this jastiper completed an order
+    if let Err(e) = auth_client
+        .send_order_event(ctx.jastiper_id, "COMPLETED")
+        .await
+    {
+        warn!(
+            "⚠️ [confirm_order] gagal kirim order-event COMPLETED jastiper_id={}: {:?}",
+            ctx.jastiper_id, e
+        );
+    }
 
     let result = ctx
         .updated_order
