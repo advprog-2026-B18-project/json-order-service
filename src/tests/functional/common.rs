@@ -64,3 +64,22 @@ pub fn json_request_no_auth(
         .body(axum::body::Body::from(body_bytes))
         .expect("build request")
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn json_request_no_auth_get_without_body() {
+        let req = json_request_no_auth("GET", "/test", None);
+        assert_eq!(req.method(), "GET");
+        assert_eq!(req.uri(), "/test");
+    }
+
+    #[test]
+    fn json_request_no_auth_post_with_body() {
+        let req = json_request_no_auth("POST", "/orders", Some(serde_json::json!({"key": "value"})));
+        assert_eq!(req.method(), "POST");
+        assert_eq!(req.uri(), "/orders");
+    }
+}

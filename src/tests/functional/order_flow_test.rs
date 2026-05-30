@@ -13,10 +13,8 @@ use crate::services::auth_client::MockAuthClient;
 use crate::services::inventory_client::MockInventoryClient;
 use crate::services::wallet_client::MockWalletClient;
 use crate::state::AppState;
-use crate::tests::unit::controller::helper_test::{
-    dummy_mq_pool, noop_checkout_publisher,
-};
 use crate::tests::unit::controller::helper_test::{TestApp, json_request, make_test_token};
+use crate::tests::unit::controller::helper_test::{dummy_mq_pool, noop_checkout_publisher};
 
 use super::common::{make_state, setup_jwt_secret};
 

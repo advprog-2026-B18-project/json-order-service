@@ -79,7 +79,9 @@ async fn test_double_saga_execution_skipped_by_idempotency() {
     wallet_client.expect_check_wallet().returning(|_, _| Ok(()));
 
     let mut auth_client = MockAuthClient::new();
-    auth_client.expect_send_order_event().returning(|_, _| Ok(()));
+    auth_client
+        .expect_send_order_event()
+        .returning(|_, _| Ok(()));
 
     let order_repo: Arc<dyn crate::repositories::order_repository::OrderRepository + Send + Sync> =
         Arc::new(order_repo);
@@ -87,8 +89,7 @@ async fn test_double_saga_execution_skipped_by_idempotency() {
         Arc::new(inv_client);
     let wallet_client: Arc<dyn crate::services::wallet_client::WalletClient + Send + Sync> =
         Arc::new(wallet_client);
-    let auth_client: Arc<dyn AuthClient + Send + Sync> =
-        Arc::new(auth_client);
+    let auth_client: Arc<dyn AuthClient + Send + Sync> = Arc::new(auth_client);
     let idem_repo: Arc<
         dyn crate::repositories::idempotency_repository::IdempotencyRepository + Send + Sync,
     > = Arc::new(idem_repo);

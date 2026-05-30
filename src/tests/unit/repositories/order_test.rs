@@ -224,6 +224,37 @@ mod tests {
     }
 
     #[sqlx::test(migrations = "./migrations")]
+    async fn test_find_all_filter_jastiper_id(pool: PgPool) {
+        let repo = build_order_repo(pool);
+        let (_, jastiper_id, _) = create_dummy_order(&repo).await;
+        create_dummy_order(&repo).await;
+
+        let filter = OrderFilter {
+            titipers_id: None,
+            jastiper_id: Some(jastiper_id),
+            product_id: None,
+            status: None,
+            date_from: None,
+            date_to: None,
+        };
+
+        let pagination = PaginationParams {
+            page: Some(1),
+            limit: Some(10),
+            sort_by: None,
+            order: None,
+        };
+
+        let (orders, total) = repo
+            .find_all(Some(&filter), &pagination)
+            .await
+            .expect("Query gagal");
+
+        assert_eq!(total, 1);
+        assert_eq!(orders[0].jastiper_id, jastiper_id);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
     async fn test_find_all_filter_status_pending(pool: PgPool) {
         let repo = build_order_repo(pool);
         create_dummy_order(&repo).await;

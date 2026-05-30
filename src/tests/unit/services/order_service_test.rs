@@ -810,6 +810,45 @@ async fn confirm_order_gagal_order_tidak_ditemukan() {
     assert!(matches!(result, Err(AppError::NotFound(_))));
 }
 
+#[tokio::test]
+async fn confirm_order_gagal_send_order_event_warn() {
+    let titipers_id = Uuid::new_v4();
+    let jastiper_id = Uuid::new_v4();
+    let order_id = Uuid::new_v4();
+
+    let mut repo = MockOrderRepository::new();
+    let mut wallet = MockWalletClient::new();
+    let mut inv = MockInventoryClient::new();
+    let mut auth = MockAuthClient::new();
+
+    let order = make_order(order_id, titipers_id, jastiper_id, OrderStatus::Shipped);
+    let completed = make_order(order_id, titipers_id, jastiper_id, OrderStatus::Completed);
+    repo.expect_find_by_id()
+        .returning(move |_| Ok(Some(order.clone())));
+    repo.expect_update()
+        .returning(move |_, _, _| Ok(completed.clone()));
+
+    wallet.expect_earnings_wallet().returning(|_, _, _| {
+        Ok(EarningsResponse {
+            transaction_id: "txn-earn".to_string(),
+        })
+    });
+    inv.expect_confirm_order_received().returning(|_, _| Ok(()));
+    auth.expect_send_order_event()
+        .returning(|_, _| Err(AppError::Internal));
+
+    let result = order::confirm_order(
+        Arc::new(repo),
+        Arc::new(wallet),
+        Arc::new(inv),
+        Arc::new(auth),
+        titipers_id,
+        order_id,
+    )
+    .await;
+    assert!(result.is_ok());
+}
+
 // ──────────────────────────────────────────────────────────────
 // purchased
 // ──────────────────────────────────────────────────────────────

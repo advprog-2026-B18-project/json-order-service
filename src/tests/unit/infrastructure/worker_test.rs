@@ -96,7 +96,15 @@ async fn run_process_checkout_request(
     let auth: Arc<dyn AuthClient + Send + Sync> = Arc::new(auth);
     let idempotency: Arc<dyn IdempotencyRepository + Send + Sync> = Arc::new(idempotency);
 
-    process_checkout_request(&order_repo, &inventory, &wallet, &auth, &idempotency, request).await
+    process_checkout_request(
+        &order_repo,
+        &inventory,
+        &wallet,
+        &auth,
+        &idempotency,
+        request,
+    )
+    .await
 }
 
 // === Happy Path ===
@@ -137,7 +145,8 @@ async fn test_process_checkout_request_success_marks_processed() {
     auth.expect_send_order_event().returning(|_, _| Ok(()));
 
     let result =
-        run_process_checkout_request(order_repo, inventory, wallet, idempotency, auth, request).await;
+        run_process_checkout_request(order_repo, inventory, wallet, idempotency, auth, request)
+            .await;
 
     assert!(result.is_ok());
 }
@@ -159,7 +168,8 @@ async fn test_process_checkout_request_duplicate_message_skips_saga() {
     idempotency.expect_is_processed().returning(|_| Ok(true));
 
     let result =
-        run_process_checkout_request(order_repo, inventory, wallet, idempotency, auth, request).await;
+        run_process_checkout_request(order_repo, inventory, wallet, idempotency, auth, request)
+            .await;
 
     assert!(result.is_ok());
 }
@@ -188,7 +198,8 @@ async fn test_process_checkout_request_non_reserving_order_marks_processed() {
     idempotency.expect_mark_processed().returning(|_, _| Ok(()));
 
     let result =
-        run_process_checkout_request(order_repo, inventory, wallet, idempotency, auth, request).await;
+        run_process_checkout_request(order_repo, inventory, wallet, idempotency, auth, request)
+            .await;
 
     assert!(result.is_ok());
 }
@@ -212,7 +223,8 @@ async fn test_process_checkout_request_missing_order_returns_not_found() {
     order_repo.expect_find_by_id().returning(|_| Ok(None));
 
     let result =
-        run_process_checkout_request(order_repo, inventory, wallet, idempotency, auth, request).await;
+        run_process_checkout_request(order_repo, inventory, wallet, idempotency, auth, request)
+            .await;
 
     assert!(matches!(result, Err(AppError::NotFound(_))));
 }
@@ -238,15 +250,18 @@ async fn test_process_checkout_request_saga_error_returns_error_without_side_eff
             OrderStatus::Reserving,
         )))
     });
-    wallet
-        .expect_check_wallet()
-        .returning(|_, _| Err(AppError::UnprocessableEntity("Saldo tidak cukup".to_string())));
+    wallet.expect_check_wallet().returning(|_, _| {
+        Err(AppError::UnprocessableEntity(
+            "Saldo tidak cukup".to_string(),
+        ))
+    });
 
     // No expect_update or expect_mark_processed — saga failure should not trigger cancel
     // or idempotency marking in process_checkout_request.
 
     let result =
-        run_process_checkout_request(order_repo, inventory, wallet, idempotency, auth, request).await;
+        run_process_checkout_request(order_repo, inventory, wallet, idempotency, auth, request)
+            .await;
 
     assert!(matches!(result, Err(AppError::UnprocessableEntity(_))));
 }
@@ -277,7 +292,8 @@ async fn test_process_checkout_request_internal_error_returns_error_without_side
         .returning(|_, _| Err(AppError::Internal));
 
     let result =
-        run_process_checkout_request(order_repo, inventory, wallet, idempotency, auth, request).await;
+        run_process_checkout_request(order_repo, inventory, wallet, idempotency, auth, request)
+            .await;
 
     assert!(matches!(result, Err(AppError::Internal)));
 }
