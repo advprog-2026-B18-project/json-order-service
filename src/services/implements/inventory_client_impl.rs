@@ -193,11 +193,11 @@ pub(crate) async fn send_product_rating(
             Ok(())
         }
         404 => {
-            debug!(
-                "⚠️ [inventory] produk tidak ditemukan product_id={} (non-fatal)",
+            warn!(
+                "⚠️ [inventory] produk tidak ditemukan product_id={}",
                 product_id
             );
-            Ok(())
+            Err(AppError::NotFound("Produk tidak ditemukan".to_string()))
         }
         409 => {
             debug!(
