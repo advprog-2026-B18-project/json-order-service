@@ -18,11 +18,7 @@ impl AuthClient for HttpAuthClient {
         send_jastiper_rating(jastiper_id, order_id, rating, review).await
     }
 
-    async fn send_order_event(
-        &self,
-        jastiper_id: Uuid,
-        event: &str,
-    ) -> Result<(), AppError> {
+    async fn send_order_event(&self, jastiper_id: Uuid, event: &str) -> Result<(), AppError> {
         send_order_event(jastiper_id, event).await
     }
 }

@@ -45,10 +45,10 @@ fn retry_count_from_delivery(delivery: &Delivery) -> u8 {
 
     if let Some(AMQPValue::FieldArray(arr)) = headers.inner().get("x-death") {
         for entry in arr.as_slice() {
-            if let AMQPValue::FieldTable(table) = entry {
-                if let Some(AMQPValue::LongUInt(n)) = table.inner().get("count") {
-                    return *n as u8;
-                }
+            if let AMQPValue::FieldTable(table) = entry
+                && let Some(AMQPValue::LongUInt(n)) = table.inner().get("count")
+            {
+                return *n as u8;
             }
         }
     }
@@ -329,7 +329,10 @@ async fn cancel_and_mark_processed(
         .mark_processed(request.idempotency_key, request.order_id)
         .await
     {
-        error!("[worker] gagal mark idempotent order_id={}: {e}", request.order_id);
+        error!(
+            "[worker] gagal mark idempotent order_id={}: {e}",
+            request.order_id
+        );
     }
 }
 

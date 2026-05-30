@@ -13,9 +13,5 @@ pub trait AuthClient: Send + Sync {
         review: Option<&'a str>,
     ) -> Result<(), AppError>;
 
-    async fn send_order_event(
-        &self,
-        jastiper_id: Uuid,
-        event: &str,
-    ) -> Result<(), AppError>;
+    async fn send_order_event(&self, jastiper_id: Uuid, event: &str) -> Result<(), AppError>;
 }

@@ -142,7 +142,9 @@ async fn main() {
         let auth_client = Arc::clone(&state.auth_client);
         let idempotency = Arc::clone(&state.idempotency_repo);
         tokio::spawn(async move {
-            if let Err(e) = run_worker(mq, order_repo, inventory, wallet, auth_client, idempotency).await {
+            if let Err(e) =
+                run_worker(mq, order_repo, inventory, wallet, auth_client, idempotency).await
+            {
                 tracing::error!("worker crashed: {e}");
             }
         });

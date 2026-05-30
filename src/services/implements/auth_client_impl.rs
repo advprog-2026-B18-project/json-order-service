@@ -67,10 +67,7 @@ pub(crate) async fn send_jastiper_rating(
     }
 }
 
-pub(crate) async fn send_order_event(
-    jastiper_id: Uuid,
-    event: &str,
-) -> Result<(), AppError> {
+pub(crate) async fn send_order_event(jastiper_id: Uuid, event: &str) -> Result<(), AppError> {
     let url = format!("{}/internal/users/{}/order-event", user_url(), jastiper_id);
 
     let payload = json!({

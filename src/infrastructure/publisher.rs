@@ -3,8 +3,9 @@ use crate::models::checkout_request::CheckoutRequest;
 use async_trait::async_trait;
 use deadpool_lapin::Pool;
 use lapin::{
-    BasicProperties, Channel, types::AMQPValue,
+    BasicProperties, Channel,
     options::{BasicPublishOptions, QueueDeclareOptions},
+    types::AMQPValue,
 };
 use tracing::log::info;
 
@@ -59,7 +60,9 @@ impl RabbitMqCheckoutPublisher {
                     .await
                     .is_err()
                 {
-                    tracing::warn!("[publisher] queue '{QUEUE_NAME}' sudah ada tanpa DLX, fallback");
+                    tracing::warn!(
+                        "[publisher] queue '{QUEUE_NAME}' sudah ada tanpa DLX, fallback"
+                    );
                     channel
                         .queue_declare(
                             QUEUE_NAME,
