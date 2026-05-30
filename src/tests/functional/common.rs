@@ -78,7 +78,8 @@ mod tests {
 
     #[test]
     fn json_request_no_auth_post_with_body() {
-        let req = json_request_no_auth("POST", "/orders", Some(serde_json::json!({"key": "value"})));
+        let req =
+            json_request_no_auth("POST", "/orders", Some(serde_json::json!({"key": "value"})));
         assert_eq!(req.method(), "POST");
         assert_eq!(req.uri(), "/orders");
     }

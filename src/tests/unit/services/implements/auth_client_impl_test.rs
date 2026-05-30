@@ -165,9 +165,7 @@ mod tests {
             ],
             async {
                 let client = crate::services::adapters::auth_client_adapt::HttpAuthClient;
-                let result = client
-                    .send_order_event(Uuid::new_v4(), "COMPLETED")
-                    .await;
+                let result = client.send_order_event(Uuid::new_v4(), "COMPLETED").await;
                 assert!(result.is_ok());
             },
         )
@@ -186,11 +184,11 @@ mod tests {
             .mount(&mock_server)
             .await;
 
-        let result =
-            crate::services::implements::auth_client_impl::send_order_event(
-                Uuid::new_v4(), "COMPLETED",
-            )
-            .await;
+        let result = crate::services::implements::auth_client_impl::send_order_event(
+            Uuid::new_v4(),
+            "COMPLETED",
+        )
+        .await;
 
         assert!(result.is_ok());
     }
@@ -207,11 +205,11 @@ mod tests {
             .mount(&mock_server)
             .await;
 
-        let result =
-            crate::services::implements::auth_client_impl::send_order_event(
-                Uuid::new_v4(), "COMPLETED",
-            )
-            .await;
+        let result = crate::services::implements::auth_client_impl::send_order_event(
+            Uuid::new_v4(),
+            "COMPLETED",
+        )
+        .await;
 
         assert!(result.is_ok());
     }
