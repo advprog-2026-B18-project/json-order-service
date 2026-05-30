@@ -426,7 +426,15 @@ pub(crate) async fn process_checkout_request(
                 .await?;
 
             // Notify auth service that this jastiper has a new order
-            // TODO 1
+            if let Err(e) = auth_client
+                .send_order_event(request.jastiper_id, "CREATED")
+                .await
+            {
+                warn!(
+                    "[worker] gagal kirim order-event CREATED ke auth jastiper_id={}: {:?}",
+                    request.jastiper_id, e
+                );
+            }
 
             info!(
                 "[worker] checkout selesai order_id={} sekarang PENDING",

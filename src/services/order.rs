@@ -409,7 +409,15 @@ pub async fn confirm_order(
     saga.run(&mut ctx).await?;
 
     // Notify auth service that this jastiper completed an order
-    // TODO 2
+    if let Err(e) = auth_client
+        .send_order_event(ctx.jastiper_id, "COMPLETED")
+        .await
+    {
+        warn!(
+            "⚠️ [confirm_order] gagal kirim order-event COMPLETED jastiper_id={}: {:?}",
+            ctx.jastiper_id, e
+        );
+    }
 
     let result = ctx
         .updated_order
