@@ -110,6 +110,7 @@ pub async fn confirm_order(
         Arc::clone(&state.order_repo),
         Arc::clone(&state.wallet_client),
         Arc::clone(&state.inventory_client),
+        Arc::clone(&state.auth_client),
         claims.user_id()?,
         order_id,
     )

@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use uuid::Uuid;
 
 use crate::infrastructure::publisher::MockCheckoutPublisher;
@@ -8,9 +9,13 @@ use crate::repositories::order_repository::MockOrderRepository;
 use crate::repositories::order_status_history_repository::MockOrderStatusHistoryRepository;
 use crate::repositories::rating_jastiper_repository::MockRatingJastiperRepository;
 use crate::repositories::rating_product_repository::MockRatingProductRepository;
+use crate::services::auth_client::MockAuthClient;
 use crate::services::inventory_client::MockInventoryClient;
 use crate::services::wallet_client::MockWalletClient;
-use crate::tests::unit::controller::helper_test::noop_checkout_publisher;
+use crate::state::AppState;
+use crate::tests::unit::controller::helper_test::{
+    dummy_mq_pool, noop_checkout_publisher,
+};
 use crate::tests::unit::controller::helper_test::{TestApp, json_request, make_test_token};
 
 use super::common::{make_state, setup_jwt_secret};
@@ -317,16 +322,21 @@ async fn test_confirm_order_success() {
     let mut inv = MockInventoryClient::new();
     inv.expect_confirm_order_received().returning(|_, _| Ok(()));
 
-    let state = make_state(
-        repo,
-        inv,
-        wallet,
-        MockOrderStatusHistoryRepository::new(),
-        MockRatingProductRepository::new(),
-        MockRatingJastiperRepository::new(),
-        noop_checkout_publisher(),
-        MockIdempotencyRepository::new(),
-    );
+    let mut auth = MockAuthClient::new();
+    auth.expect_send_order_event().returning(|_, _| Ok(()));
+
+    let state = AppState {
+        order_repo: Arc::new(repo),
+        inventory_client: Arc::new(inv),
+        wallet_client: Arc::new(wallet),
+        order_status_history_repo: Arc::new(MockOrderStatusHistoryRepository::new()),
+        rating_product_repo: Arc::new(MockRatingProductRepository::new()),
+        rating_jastiper_repo: Arc::new(MockRatingJastiperRepository::new()),
+        auth_client: Arc::new(auth),
+        checkout_publisher: Arc::new(noop_checkout_publisher()),
+        mq_pool: dummy_mq_pool(),
+        idempotency_repo: Arc::new(MockIdempotencyRepository::new()),
+    };
     let app = TestApp::new(state);
 
     let token = make_test_token(user_id, "TITIPERS");

@@ -1,6 +1,6 @@
 use crate::error::AppError;
 use crate::services::auth_client::AuthClient;
-use crate::services::implements::auth_client_impl::send_jastiper_rating;
+use crate::services::implements::auth_client_impl::{send_jastiper_rating, send_order_event};
 use async_trait::async_trait;
 use uuid::Uuid;
 
@@ -16,5 +16,13 @@ impl AuthClient for HttpAuthClient {
         review: Option<&'a str>,
     ) -> Result<(), AppError> {
         send_jastiper_rating(jastiper_id, order_id, rating, review).await
+    }
+
+    async fn send_order_event(
+        &self,
+        jastiper_id: Uuid,
+        event: &str,
+    ) -> Result<(), AppError> {
+        send_order_event(jastiper_id, event).await
     }
 }
