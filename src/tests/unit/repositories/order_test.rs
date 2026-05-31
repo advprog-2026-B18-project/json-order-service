@@ -41,6 +41,7 @@ mod tests {
                 notes: None,
             },
             note_to_jastiper: Some("Tolong dibungkus rapi".to_string()),
+            idempotency_key: None,
         };
 
         let snapshot = json!({
@@ -56,6 +57,7 @@ mod tests {
 
         let created = repo
             .create(
+                Uuid::new_v4(),
                 titipers_id,
                 jastiper_id,
                 req,
@@ -109,10 +111,12 @@ mod tests {
                 notes: None,
             },
             note_to_jastiper: None,
+            idempotency_key: None,
         };
 
         let created = repo
             .create(
+                Uuid::new_v4(),
                 titipers_id,
                 jastiper_id,
                 req,

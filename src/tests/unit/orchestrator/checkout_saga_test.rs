@@ -57,6 +57,7 @@ fn make_create_request(product_id: Uuid) -> CreateOrderRequest {
             notes: None,
         },
         note_to_jastiper: None,
+        idempotency_key: None,
     }
 }
 

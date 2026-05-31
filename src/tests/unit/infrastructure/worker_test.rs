@@ -68,6 +68,7 @@ fn make_request(
                 notes: None,
             },
             note_to_jastiper: None,
+            idempotency_key: None,
         },
         product: json!({
             "name": "Snack",

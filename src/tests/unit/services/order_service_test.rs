@@ -12,6 +12,7 @@ use crate::models::order::{
 use crate::models::order_state::OrderStatus;
 use crate::models::role::Role;
 use crate::models::shipping_address::ShippingAddress;
+use crate::repositories::idempotency_repository::MockIdempotencyRepository;
 use crate::repositories::order_repository::MockOrderRepository;
 use crate::repositories::order_status_history_repository::MockOrderStatusHistoryRepository;
 use crate::services::auth_client::MockAuthClient;
@@ -66,6 +67,7 @@ fn make_create_request(product_id: Uuid) -> CreateOrderRequest {
             notes: None,
         },
         note_to_jastiper: None,
+        idempotency_key: None,
     }
 }
 
@@ -121,13 +123,14 @@ async fn checkout_sukses() {
         OrderStatus::Pending,
     );
     repo.expect_create()
-        .returning(move |_, _, _, _, _| Ok(expected_order.clone()));
+        .returning(move |_, _, _, _, _, _| Ok(expected_order.clone()));
 
     let req = make_create_request(product_id);
     let result = order::checkout(
         Arc::new(repo),
         Arc::new(inv),
         Arc::new(publisher),
+        Arc::new(MockIdempotencyRepository::new()),
         titipers_id,
         req,
     )
@@ -159,6 +162,7 @@ async fn checkout_gagal_jastiper_beli_produk_sendiri() {
         Arc::new(repo),
         Arc::new(inv),
         Arc::new(publisher),
+        Arc::new(MockIdempotencyRepository::new()),
         user_id,
         req,
     )
@@ -184,6 +188,7 @@ async fn checkout_gagal_fetch_product_error() {
         Arc::new(repo),
         Arc::new(inv),
         Arc::new(publisher),
+        Arc::new(MockIdempotencyRepository::new()),
         titipers_id,
         req,
     )
@@ -216,6 +221,7 @@ async fn checkout_gagal_jastiper_id_tidak_valid_di_product() {
         Arc::new(repo),
         Arc::new(inv),
         Arc::new(publisher),
+        Arc::new(MockIdempotencyRepository::new()),
         titipers_id,
         req,
     )
@@ -249,7 +255,7 @@ async fn checkout_gagal_publish_error() {
         OrderStatus::Reserving,
     );
     repo.expect_create()
-        .returning(move |_, _, _, _, _| Ok(expected_order.clone()));
+        .returning(move |_, _, _, _, _, _| Ok(expected_order.clone()));
     publisher
         .expect_publish()
         .returning(|_| Err(AppError::Internal));
@@ -259,6 +265,7 @@ async fn checkout_gagal_publish_error() {
         Arc::new(repo),
         Arc::new(inv),
         Arc::new(publisher),
+        Arc::new(MockIdempotencyRepository::new()),
         titipers_id,
         req,
     )
@@ -286,13 +293,14 @@ async fn checkout_gagal_create_order_error() {
     inv.expect_fetch_product()
         .returning(move |_| Ok(product_json.clone()));
     repo.expect_create()
-        .returning(|_, _, _, _, _| Err(AppError::Internal));
+        .returning(|_, _, _, _, _, _| Err(AppError::Internal));
 
     let req = make_create_request(product_id);
     let result = order::checkout(
         Arc::new(repo),
         Arc::new(inv),
         Arc::new(publisher),
+        Arc::new(MockIdempotencyRepository::new()),
         titipers_id,
         req,
     )

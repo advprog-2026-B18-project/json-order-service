@@ -115,7 +115,7 @@ async fn checkout_sukses_202() {
     });
     let order = make_order(order_id, titipers_id, jastiper_id, OrderStatus::Reserving);
     repo.expect_create()
-        .returning(move |_, _, _, _, _| Ok(order.clone()));
+        .returning(move |_, _, _, _, _, _| Ok(order.clone()));
 
     let app = TestApp::new(default_state(
         repo,
@@ -214,7 +214,7 @@ async fn checkout_saldo_dicek_di_worker_returns_202() {
 
     let order = make_order(order_id, titipers_id, jastiper_id, OrderStatus::Reserving);
     repo.expect_create()
-        .returning(move |_, _, _, _, _| Ok(order.clone()));
+        .returning(move |_, _, _, _, _, _| Ok(order.clone()));
 
     let app = TestApp::new(default_state(
         repo,
