@@ -44,6 +44,7 @@ impl OrderRepository for PgOrderRepository {
 
     async fn create(
         &self,
+        order_id: Uuid,
         titipers_id: Uuid,
         jastiper_id: Uuid,
         req: CreateOrderRequest,
@@ -53,6 +54,7 @@ impl OrderRepository for PgOrderRepository {
         order_repo::create(
             &self.pool,
             &*self.order_status_history_repo,
+            order_id,
             titipers_id,
             jastiper_id,
             req,

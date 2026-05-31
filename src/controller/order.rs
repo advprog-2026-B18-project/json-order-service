@@ -45,6 +45,7 @@ pub async fn checkout(
         Arc::clone(&state.order_repo),
         Arc::clone(&state.inventory_client),
         Arc::clone(&state.checkout_publisher),
+        Arc::clone(&state.idempotency_repo),
         claims.user_id()?,
         req,
     )

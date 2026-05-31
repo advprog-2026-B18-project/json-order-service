@@ -46,4 +46,16 @@ impl IdempotencyRepository for PgIdempotencyRepository {
 
         Ok(())
     }
+
+    async fn try_register(&self, key: Uuid, order_id: Uuid) -> Result<bool, AppError> {
+        let result = sqlx::query!(
+            r#"INSERT INTO idempotency_keys (key, order_id) VALUES ($1, $2) ON CONFLICT (key) DO NOTHING"#,
+            key,
+            order_id,
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(|_| AppError::Internal)?;
+        Ok(result.rows_affected() > 0)
+    }
 }

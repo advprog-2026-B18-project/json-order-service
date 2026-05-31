@@ -152,16 +152,17 @@ pub async fn find_by_id(pool: &PgPool, order_id: Uuid) -> Result<Option<Order>> 
     Ok(order)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn create(
     pool: &PgPool,
     order_status_history_repo: &(dyn OrderStatusHistoryRepository + Send + Sync),
+    order_id: Uuid,
     titipers_id: Uuid,
     jastiper_id: Uuid,
     req: CreateOrderRequest,
     product_snapshot: serde_json::Value,
     price: PriceBreakdown,
 ) -> Result<Order> {
-    let order_id = Uuid::new_v4();
     let now = Utc::now();
     let expired_at = now + chrono::Duration::minutes(15);
 
