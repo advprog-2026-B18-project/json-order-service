@@ -5,7 +5,7 @@ mod tests {
     use std::sync::Arc;
     use uuid::Uuid;
 
-    use crate::models::filter_pagination::{OrderFilter, PaginationParams};
+    use crate::models::filter_pagination::{OrderFilter, PaginationParams, SortOrder};
     use crate::models::order::{
         CreateOrderRequest, PriceBreakdown, ShippingAddress, UpdateOrderParams,
     };
@@ -41,6 +41,7 @@ mod tests {
                 notes: None,
             },
             note_to_jastiper: Some("Tolong dibungkus rapi".to_string()),
+            idempotency_key: None,
         };
 
         let snapshot = json!({
@@ -56,6 +57,7 @@ mod tests {
 
         let created = repo
             .create(
+                Uuid::new_v4(),
                 titipers_id,
                 jastiper_id,
                 req,
@@ -109,10 +111,12 @@ mod tests {
                 notes: None,
             },
             note_to_jastiper: None,
+            idempotency_key: None,
         };
 
         let created = repo
             .create(
+                Uuid::new_v4(),
                 titipers_id,
                 jastiper_id,
                 req,
@@ -221,6 +225,37 @@ mod tests {
 
         assert_eq!(total, 1);
         assert_eq!(orders[0].titipers_id, titipers_id);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn test_find_all_filter_jastiper_id(pool: PgPool) {
+        let repo = build_order_repo(pool);
+        let (_, jastiper_id, _) = create_dummy_order(&repo).await;
+        create_dummy_order(&repo).await;
+
+        let filter = OrderFilter {
+            titipers_id: None,
+            jastiper_id: Some(jastiper_id),
+            product_id: None,
+            status: None,
+            date_from: None,
+            date_to: None,
+        };
+
+        let pagination = PaginationParams {
+            page: Some(1),
+            limit: Some(10),
+            sort_by: None,
+            order: None,
+        };
+
+        let (orders, total) = repo
+            .find_all(Some(&filter), &pagination)
+            .await
+            .expect("Query gagal");
+
+        assert_eq!(total, 1);
+        assert_eq!(orders[0].jastiper_id, jastiper_id);
     }
 
     #[sqlx::test(migrations = "./migrations")]
@@ -397,5 +432,215 @@ mod tests {
             .expect("Query gagal");
 
         assert!(found.is_none());
+    }
+
+    // === Sort & Filter Variants ===
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn test_find_all_desc_sort(pool: PgPool) {
+        let repo = build_order_repo(pool);
+        create_dummy_order(&repo).await;
+        create_dummy_order(&repo).await;
+
+        let pagination = PaginationParams {
+            page: Some(1),
+            limit: Some(10),
+            sort_by: None,
+            order: Some(SortOrder::Desc),
+        };
+
+        let (orders, _) = repo.find_all(None, &pagination).await.expect("Query gagal");
+        assert_eq!(orders.len(), 2);
+        // Descending: first order should be newer (later created_at)
+        assert!(orders[0].created_at >= orders[1].created_at);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn test_find_all_sort_by_updated_at(pool: PgPool) {
+        let repo = build_order_repo(pool);
+        create_dummy_order(&repo).await;
+        create_dummy_order(&repo).await;
+
+        let pagination = PaginationParams {
+            page: Some(1),
+            limit: Some(10),
+            sort_by: Some("updated_at".to_string()),
+            order: Some(SortOrder::Asc),
+        };
+
+        let (orders, _) = repo.find_all(None, &pagination).await.expect("Query gagal");
+        assert_eq!(orders.len(), 2);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn test_find_all_sort_by_total_price(pool: PgPool) {
+        let repo = build_order_repo(pool);
+        create_dummy_order(&repo).await;
+        create_dummy_order(&repo).await;
+
+        let pagination = PaginationParams {
+            page: Some(1),
+            limit: Some(10),
+            sort_by: Some("total_price".to_string()),
+            order: Some(SortOrder::Asc),
+        };
+
+        let (orders, _) = repo.find_all(None, &pagination).await.expect("Query gagal");
+        assert_eq!(orders.len(), 2);
+        // Ascending by total_price
+        assert!(orders[0].total_price <= orders[1].total_price);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn test_find_all_filter_product_id(pool: PgPool) {
+        let repo = build_order_repo(pool);
+        let (_, _, order1) = create_dummy_order(&repo).await;
+        create_dummy_order(&repo).await;
+
+        let filter = OrderFilter {
+            titipers_id: None,
+            jastiper_id: None,
+            product_id: Some(order1.product_id),
+            status: None,
+            date_from: None,
+            date_to: None,
+        };
+
+        let pagination = PaginationParams {
+            page: Some(1),
+            limit: Some(10),
+            sort_by: None,
+            order: None,
+        };
+
+        let (orders, total) = repo
+            .find_all(Some(&filter), &pagination)
+            .await
+            .expect("Query gagal");
+
+        assert_eq!(total, 1);
+        assert_eq!(orders[0].product_id, order1.product_id);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn test_find_all_filter_date_from(pool: PgPool) {
+        let repo = build_order_repo(pool);
+        create_dummy_order(&repo).await;
+
+        let past = chrono::Utc::now() - chrono::Duration::hours(1);
+
+        let filter = OrderFilter {
+            titipers_id: None,
+            jastiper_id: None,
+            product_id: None,
+            status: None,
+            date_from: Some(past),
+            date_to: None,
+        };
+
+        let pagination = PaginationParams {
+            page: Some(1),
+            limit: Some(10),
+            sort_by: None,
+            order: None,
+        };
+
+        let (_orders, total) = repo
+            .find_all(Some(&filter), &pagination)
+            .await
+            .expect("Query gagal");
+
+        assert_eq!(total, 1);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn test_find_all_filter_date_to(pool: PgPool) {
+        let repo = build_order_repo(pool);
+        create_dummy_order(&repo).await;
+
+        let future = chrono::Utc::now() + chrono::Duration::hours(1);
+
+        let filter = OrderFilter {
+            titipers_id: None,
+            jastiper_id: None,
+            product_id: None,
+            status: None,
+            date_from: None,
+            date_to: Some(future),
+        };
+
+        let pagination = PaginationParams {
+            page: Some(1),
+            limit: Some(10),
+            sort_by: None,
+            order: None,
+        };
+
+        let (_orders, total) = repo
+            .find_all(Some(&filter), &pagination)
+            .await
+            .expect("Query gagal");
+
+        assert_eq!(total, 1);
+    }
+
+    // === find_expired_pending_orders ===
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn test_find_expired_pending_orders_returns_expired_orders(pool: PgPool) {
+        let repo = build_order_repo(pool.clone());
+        // Create a normal order (should NOT be returned — Reserving status, future expired_at)
+        create_dummy_order(&repo).await;
+
+        // Insert an expired PENDING order directly via raw SQL
+        let expired_order_id = Uuid::new_v4();
+        let past = chrono::Utc::now() - chrono::Duration::hours(1);
+
+        sqlx::query(
+            r#"
+            INSERT INTO "order"
+                (order_id, titipers_id, jastiper_id, product_id, product_snapshot,
+                 quantity, unit_price, service_fee, total_price, status,
+                 shipping_address, note_to_jastiper, created_at, updated_at, expired_at)
+            VALUES ($1, $2, $3, $4, '{"name": "test"}',
+                    1, 10000, 1000, 11000, 'PENDING',
+                    '{"recipient_name": "Test"}', '', $5, $5, $6)
+            "#,
+        )
+        .bind(expired_order_id)
+        .bind(Uuid::new_v4())
+        .bind(Uuid::new_v4())
+        .bind(Uuid::new_v4())
+        .bind(past)
+        .bind(past)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let result = repo
+            .find_expired_pending_orders()
+            .await
+            .expect("Query gagal");
+
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].order_id, expired_order_id);
+        assert_eq!(
+            result[0].status,
+            crate::models::order_state::OrderStatus::Pending
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn test_find_expired_pending_orders_ignores_non_expired(pool: PgPool) {
+        let repo = build_order_repo(pool);
+        // Fresh order: Reserving status, future expired_at — should NOT be returned
+        create_dummy_order(&repo).await;
+
+        let result = repo
+            .find_expired_pending_orders()
+            .await
+            .expect("Query gagal");
+
+        assert_eq!(result.len(), 0);
     }
 }

@@ -50,4 +50,35 @@ mod tests {
         assert_eq!(p.sort_by.as_deref(), Some("created_at"));
         assert!(matches!(p.order, Some(SortOrder::Desc)));
     }
+
+    #[test]
+    fn opt_i64_from_str_deserialize_null() {
+        let json = r#"{"page":null,"limit":null}"#;
+        let p: PaginationParams = serde_json::from_str(json).unwrap();
+        assert!(p.page.is_none());
+        assert!(p.limit.is_none());
+    }
+
+    #[test]
+    fn opt_i64_from_str_deserialize_empty_string() {
+        let json = r#"{"page":"","limit":""}"#;
+        let p: PaginationParams = serde_json::from_str(json).unwrap();
+        assert!(p.page.is_none());
+        assert!(p.limit.is_none());
+    }
+
+    #[test]
+    fn opt_i64_from_str_deserialize_valid_number() {
+        let json = r#"{"page":"3","limit":"15"}"#;
+        let p: PaginationParams = serde_json::from_str(json).unwrap();
+        assert_eq!(p.page, Some(3));
+        assert_eq!(p.limit, Some(15));
+    }
+
+    #[test]
+    fn opt_i64_from_str_deserialize_invalid_returns_err() {
+        let json = r#"{"page":"abc"}"#;
+        let result: Result<PaginationParams, _> = serde_json::from_str(json);
+        assert!(result.is_err());
+    }
 }

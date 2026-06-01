@@ -45,6 +45,7 @@ pub async fn checkout(
         Arc::clone(&state.order_repo),
         Arc::clone(&state.inventory_client),
         Arc::clone(&state.checkout_publisher),
+        Arc::clone(&state.idempotency_repo),
         claims.user_id()?,
         req,
     )
@@ -110,6 +111,7 @@ pub async fn confirm_order(
         Arc::clone(&state.order_repo),
         Arc::clone(&state.wallet_client),
         Arc::clone(&state.inventory_client),
+        Arc::clone(&state.auth_client),
         claims.user_id()?,
         order_id,
     )

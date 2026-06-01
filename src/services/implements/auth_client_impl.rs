@@ -20,8 +20,9 @@ pub(crate) async fn send_jastiper_rating(
     let url = format!("{}/internal/users/{}/rating", user_url(), jastiper_id,);
 
     let payload = json!({
-        "order_id": order_id,
-        "rating":   rating,
+        "order_id":    order_id,
+        "rating":      rating,
+        "is_completed": true,
     });
 
     debug!("👤 [user] send_jastiper_rating → POST {}", url);
@@ -59,6 +60,41 @@ pub(crate) async fn send_jastiper_rating(
         code => {
             error!(
                 "❌ [user] send_jastiper_rating unexpected status={} jastiper_id={}",
+                code, jastiper_id
+            );
+            Ok(())
+        }
+    }
+}
+
+pub(crate) async fn send_order_event(jastiper_id: Uuid, event: &str) -> Result<(), AppError> {
+    let url = format!("{}/internal/users/{}/order-event", user_url(), jastiper_id);
+
+    let payload = json!({
+        "event": event,
+    });
+
+    debug!("👤 [user] send_order_event → POST {} event={}", url, event);
+    debug!(
+        "👤 [user] payload: jastiper_id={} event={}",
+        jastiper_id, event
+    );
+
+    let (status, _) = internal_post(&url, payload).await?;
+
+    debug!("👤 [user] send_order_event response: HTTP {}", status);
+
+    match status {
+        200 => {
+            debug!(
+                "✅ [user] order event {} berhasil dikirim jastiper_id={}",
+                event, jastiper_id
+            );
+            Ok(())
+        }
+        code => {
+            error!(
+                "❌ [user] send_order_event unexpected status={} jastiper_id={}",
                 code, jastiper_id
             );
             Ok(())

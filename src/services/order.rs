@@ -18,8 +18,10 @@ use crate::orchestrator::confirm_order_saga::{
     UpdateStatusToCompletedStep,
 };
 use crate::orchestrator::payment_saga::{DeductWalletStep, PaymentContext, UpdateStatusToPaidStep};
+use crate::repositories::idempotency_repository::IdempotencyRepository;
 use crate::repositories::order_repository::OrderRepository;
 use crate::repositories::order_status_history_repository::OrderStatusHistoryRepository;
+use crate::services::auth_client::AuthClient;
 use crate::services::inventory_client::InventoryClient;
 use crate::services::wallet_client::WalletClient;
 use std::sync::Arc;
@@ -31,6 +33,7 @@ pub async fn checkout(
     order_repo: Arc<dyn OrderRepository + Send + Sync>,
     inventory_client: Arc<dyn InventoryClient + Send + Sync>,
     checkout_publisher: Arc<dyn CheckoutPublisher + Send + Sync>,
+    idempotency_repo: Arc<dyn IdempotencyRepository + Send + Sync>,
     titipers_id: Uuid,
     req: CreateOrderRequest,
 ) -> Result<Order, AppError> {
@@ -38,6 +41,17 @@ pub async fn checkout(
         "🛒 [checkout] titipers_id={} product_id={} qty={}",
         titipers_id, req.product_id, req.quantity
     );
+
+    // 0. Idempotency check — register key atomically before creating anything
+    let order_id = Uuid::new_v4();
+    if let Some(idemp_key) = req.idempotency_key {
+        let registered = idempotency_repo.try_register(idemp_key, order_id).await?;
+        if !registered {
+            return Err(AppError::Conflict(
+                "Pesanan dengan id ini sudah diproses".to_string(),
+            ));
+        }
+    }
 
     // 1. Fetch product
     let product = inventory_client
@@ -74,9 +88,10 @@ pub async fn checkout(
         "service_fee":    service_fee,
     });
 
-    // 4. Buat order Reserving di DB
+    // 4. Buat order Reserving di DB (pakai order_id yang sudah digenerate)
     let order = order_repo
         .create(
+            order_id,
             titipers_id,
             jastiper_id,
             req.clone(),
@@ -353,6 +368,7 @@ pub async fn confirm_order(
     order_repo: Arc<dyn OrderRepository + Send + Sync>,
     wallet_client: Arc<dyn WalletClient + Send + Sync>,
     inventory_client: Arc<dyn InventoryClient + Send + Sync>,
+    auth_client: Arc<dyn AuthClient + Send + Sync>,
     titipers_id: Uuid,
     order_id: Uuid,
 ) -> Result<Order, AppError> {
@@ -405,6 +421,17 @@ pub async fn confirm_order(
         });
 
     saga.run(&mut ctx).await?;
+
+    // Notify auth service that this jastiper completed an order
+    if let Err(e) = auth_client
+        .send_order_event(ctx.jastiper_id, "COMPLETED")
+        .await
+    {
+        warn!(
+            "⚠️ [confirm_order] gagal kirim order-event COMPLETED jastiper_id={}: {:?}",
+            ctx.jastiper_id, e
+        );
+    }
 
     let result = ctx
         .updated_order

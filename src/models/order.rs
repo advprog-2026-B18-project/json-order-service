@@ -67,6 +67,7 @@ pub struct CreateOrderRequest {
     pub shipping_address: ShippingAddress,
     #[validate(length(max = 500))]
     pub note_to_jastiper: Option<String>,
+    pub idempotency_key: Option<Uuid>,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]

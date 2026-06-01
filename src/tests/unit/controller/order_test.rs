@@ -115,7 +115,7 @@ async fn checkout_sukses_202() {
     });
     let order = make_order(order_id, titipers_id, jastiper_id, OrderStatus::Reserving);
     repo.expect_create()
-        .returning(move |_, _, _, _, _| Ok(order.clone()));
+        .returning(move |_, _, _, _, _, _| Ok(order.clone()));
 
     let app = TestApp::new(default_state(
         repo,
@@ -214,7 +214,7 @@ async fn checkout_saldo_dicek_di_worker_returns_202() {
 
     let order = make_order(order_id, titipers_id, jastiper_id, OrderStatus::Reserving);
     repo.expect_create()
-        .returning(move |_, _, _, _, _| Ok(order.clone()));
+        .returning(move |_, _, _, _, _, _| Ok(order.clone()));
 
     let app = TestApp::new(default_state(
         repo,
@@ -453,12 +453,21 @@ async fn confirm_order_sukses_200() {
     });
     inv.expect_confirm_order_received().returning(|_, _| Ok(()));
 
-    let app = TestApp::new(default_state(
-        repo,
-        inv,
-        wallet,
-        MockOrderStatusHistoryRepository::new(),
-    ));
+    let mut auth = MockAuthClient::new();
+    auth.expect_send_order_event().returning(|_, _| Ok(()));
+
+    let app = TestApp::new(AppState {
+        order_repo: Arc::new(repo),
+        inventory_client: Arc::new(inv),
+        wallet_client: Arc::new(wallet),
+        order_status_history_repo: Arc::new(MockOrderStatusHistoryRepository::new()),
+        rating_product_repo: Arc::new(MockRatingProductRepository::new()),
+        rating_jastiper_repo: Arc::new(MockRatingJastiperRepository::new()),
+        auth_client: Arc::new(auth),
+        checkout_publisher: Arc::new(noop_checkout_publisher()),
+        mq_pool: dummy_mq_pool(),
+        idempotency_repo: Arc::new(noop_idempotency_repo()),
+    });
 
     let token = make_test_token(titipers_id, "TITIPERS");
     let req = json_request(

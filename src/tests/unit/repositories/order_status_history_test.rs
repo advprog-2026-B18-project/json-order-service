@@ -40,6 +40,7 @@ mod tests {
                 notes: None,
             },
             note_to_jastiper: None,
+            idempotency_key: None,
         };
 
         let snapshot = json!({
@@ -55,6 +56,7 @@ mod tests {
 
         let created = order_repo
             .create(
+                Uuid::new_v4(),
                 titipers_id,
                 jastiper_id,
                 req,

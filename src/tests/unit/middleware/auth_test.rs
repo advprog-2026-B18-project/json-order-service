@@ -430,6 +430,34 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_from_request_parts_cache_hit() {
+        let b64_secret = base64::engine::general_purpose::STANDARD
+            .encode("my-test-secret-cache-key-32-bytes-minimum!!!");
+        let claims = default_claims(3600);
+        let token = build_token(&claims, &b64_secret);
+
+        temp_env::async_with_vars([("JWT_SECRET", Some(b64_secret.as_str()))], async {
+            // First call: populates cache
+            let req1 = Request::builder()
+                .header("Authorization", format!("Bearer {}", token.clone()))
+                .body(())
+                .unwrap();
+            let result1 = extract_claims(req1).await;
+            assert!(result1.is_ok());
+
+            // Second call: should hit cache (same JWT_SECRET, no rebuild)
+            let req2 = Request::builder()
+                .header("Authorization", format!("Bearer {}", token))
+                .body(())
+                .unwrap();
+            let result2 = extract_claims(req2).await;
+            assert!(result2.is_ok());
+            assert_eq!(result2.unwrap().sub, claims.sub);
+        })
+        .await;
+    }
+
+    #[tokio::test]
     async fn test_jwt_claims_valid_token_success() {
         temp_env::async_with_vars(&[("JWT_SECRET", Some("dGVzdA"))], async {
             let user_id = Uuid::new_v4();

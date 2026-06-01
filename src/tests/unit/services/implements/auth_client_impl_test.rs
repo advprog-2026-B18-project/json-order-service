@@ -1,6 +1,7 @@
 #[cfg(test)]
 mod tests {
     use crate::error::AppError;
+    use crate::services::auth_client::AuthClient;
     use crate::services::implements::auth_client_impl::send_jastiper_rating;
     use uuid::Uuid;
     use wiremock::matchers::{method, path_regex};
@@ -115,5 +116,101 @@ mod tests {
         let result = send_jastiper_rating(Uuid::new_v4(), Uuid::new_v4(), 4.0, None).await;
 
         assert!(matches!(result, Err(AppError::Internal)));
+    }
+
+    #[tokio::test]
+    async fn http_auth_client_adapter_send_jastiper_rating_success() {
+        let mock_server = MockServer::start().await;
+        let uri = mock_server.uri();
+
+        Mock::given(method("POST"))
+            .and(path_regex(r"/internal/users/.+/rating"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({})))
+            .mount(&mock_server)
+            .await;
+
+        temp_env::async_with_vars(
+            [
+                ("USER_SERVICE_URL", Some(uri.as_str())),
+                ("INTERNAL_SERVICE_KEY", Some("test-key")),
+            ],
+            async {
+                let client = crate::services::adapters::auth_client_adapt::HttpAuthClient;
+                let result = client
+                    .send_jastiper_rating(Uuid::new_v4(), Uuid::new_v4(), 4.5, Some("good"))
+                    .await;
+                assert!(result.is_ok());
+            },
+        )
+        .await;
+    }
+
+    // ── send_order_event ──────────────────────────────────────
+
+    #[tokio::test]
+    async fn http_auth_client_adapter_send_order_event_success() {
+        let mock_server = MockServer::start().await;
+        let uri = mock_server.uri();
+
+        Mock::given(method("POST"))
+            .and(path_regex(r"/internal/users/.+/order-event"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({})))
+            .mount(&mock_server)
+            .await;
+
+        temp_env::async_with_vars(
+            [
+                ("USER_SERVICE_URL", Some(uri.as_str())),
+                ("INTERNAL_SERVICE_KEY", Some("test-key")),
+            ],
+            async {
+                let client = crate::services::adapters::auth_client_adapt::HttpAuthClient;
+                let result = client.send_order_event(Uuid::new_v4(), "COMPLETED").await;
+                assert!(result.is_ok());
+            },
+        )
+        .await;
+    }
+
+    #[serial_test::serial]
+    #[tokio::test]
+    async fn send_order_event_200_sukses() {
+        let mock_server = MockServer::start().await;
+        setup_env(&mock_server.uri());
+
+        Mock::given(method("POST"))
+            .and(path_regex(r"/internal/users/.+/order-event"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({})))
+            .mount(&mock_server)
+            .await;
+
+        let result = crate::services::implements::auth_client_impl::send_order_event(
+            Uuid::new_v4(),
+            "COMPLETED",
+        )
+        .await;
+
+        assert!(result.is_ok());
+    }
+
+    #[serial_test::serial]
+    #[tokio::test]
+    async fn send_order_event_unexpected_status_tetap_ok() {
+        let mock_server = MockServer::start().await;
+        setup_env(&mock_server.uri());
+
+        Mock::given(method("POST"))
+            .and(path_regex(r"/internal/users/.+/order-event"))
+            .respond_with(ResponseTemplate::new(500).set_body_json(serde_json::json!({})))
+            .mount(&mock_server)
+            .await;
+
+        let result = crate::services::implements::auth_client_impl::send_order_event(
+            Uuid::new_v4(),
+            "COMPLETED",
+        )
+        .await;
+
+        assert!(result.is_ok());
     }
 }

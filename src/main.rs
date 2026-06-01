@@ -87,11 +87,14 @@ fn setup_metrics() -> MetricsState {
 
 #[tokio::main]
 async fn main() {
-    tracing_subscriber::fmt()
-        .with_env_filter("json_order_service=debug,tower_http=debug")
-        .init();
-
     dotenvy::dotenv().ok();
+
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            std::env::var("RUST_LOG")
+                .unwrap_or_else(|_| "json_order_service=warn,tower_http=warn".to_string()),
+        )
+        .init();
 
     let metrics_state = setup_metrics();
 
@@ -125,7 +128,7 @@ async fn main() {
         inventory_client: Arc::new(HttpInventoryClient),
         wallet_client: Arc::new(HttpWalletClient),
         auth_client: Arc::new(HttpAuthClient),
-        checkout_publisher: Arc::new(RabbitMqCheckoutPublisher::new(mq_pool.clone())),
+        checkout_publisher: Arc::new(RabbitMqCheckoutPublisher::new(&mq_pool)),
         mq_pool: mq_pool.clone(),
         idempotency_repo,
     });
@@ -136,9 +139,12 @@ async fn main() {
         let order_repo = Arc::clone(&state.order_repo);
         let inventory = Arc::clone(&state.inventory_client);
         let wallet = Arc::clone(&state.wallet_client);
+        let auth_client = Arc::clone(&state.auth_client);
         let idempotency = Arc::clone(&state.idempotency_repo);
         tokio::spawn(async move {
-            if let Err(e) = run_worker(mq, order_repo, inventory, wallet, idempotency).await {
+            if let Err(e) =
+                run_worker(mq, order_repo, inventory, wallet, auth_client, idempotency).await
+            {
                 tracing::error!("worker crashed: {e}");
             }
         });

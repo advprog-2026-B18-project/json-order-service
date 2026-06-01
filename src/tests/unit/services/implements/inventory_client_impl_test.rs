@@ -2,6 +2,7 @@ use crate::error::AppError;
 use crate::services::implements::inventory_client_impl::{
     confirm_order_received, fetch_product, release_stock, reserve_stock, send_product_rating,
 };
+use crate::services::inventory_client::InventoryClient;
 use serde_json::json;
 use uuid::Uuid;
 use wiremock::matchers::{method, path, path_regex};
@@ -283,6 +284,40 @@ async fn test_fetch_product_500_returns_internal() {
 
 #[serial_test::serial]
 #[tokio::test]
+async fn test_send_product_rating_409_is_ok() {
+    let mock_server = MockServer::start().await;
+    unsafe {
+        std::env::set_var("INVENTORY_SERVICE_URL", mock_server.uri());
+        std::env::set_var("INTERNAL_SERVICE_KEY", "test-key");
+    }
+    Mock::given(method("POST"))
+        .and(path_regex(r"/internal/products/.+/post-order"))
+        .respond_with(ResponseTemplate::new(409).set_body_json(json!({})))
+        .mount(&mock_server)
+        .await;
+    let result = send_product_rating(Uuid::new_v4(), Uuid::new_v4(), 4.0, None, vec![]).await;
+    assert!(result.is_ok());
+}
+
+#[serial_test::serial]
+#[tokio::test]
+async fn test_send_product_rating_200_is_ok() {
+    let mock_server = MockServer::start().await;
+    unsafe {
+        std::env::set_var("INVENTORY_SERVICE_URL", mock_server.uri());
+        std::env::set_var("INTERNAL_SERVICE_KEY", "test-key");
+    }
+    Mock::given(method("POST"))
+        .and(path_regex(r"/internal/products/.+/post-order"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({})))
+        .mount(&mock_server)
+        .await;
+    let result = send_product_rating(Uuid::new_v4(), Uuid::new_v4(), 4.0, None, vec![]).await;
+    assert!(result.is_ok());
+}
+
+#[serial_test::serial]
+#[tokio::test]
 async fn test_send_product_rating_500_logs_and_returns_ok() {
     let mock_server = MockServer::start().await;
     unsafe {
@@ -330,4 +365,31 @@ async fn test_confirm_order_received_500_returns_internal() {
         .await;
     let result = confirm_order_received(Uuid::new_v4(), Uuid::new_v4()).await;
     assert!(result.is_ok());
+}
+
+#[tokio::test]
+async fn http_inventory_client_adapter_send_product_rating_success() {
+    let mock_server = MockServer::start().await;
+    let uri = mock_server.uri();
+
+    Mock::given(method("POST"))
+        .and(path_regex(r"/internal/products/.+/post-order"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({})))
+        .mount(&mock_server)
+        .await;
+
+    temp_env::async_with_vars(
+        [
+            ("INVENTORY_SERVICE_URL", Some(uri.as_str())),
+            ("INTERNAL_SERVICE_KEY", Some("test-key")),
+        ],
+        async {
+            let client = crate::services::adapters::inventory_client_adapt::HttpInventoryClient;
+            let result = client
+                .send_product_rating(Uuid::new_v4(), Uuid::new_v4(), 4.5, None, vec![])
+                .await;
+            assert!(result.is_ok());
+        },
+    )
+    .await;
 }

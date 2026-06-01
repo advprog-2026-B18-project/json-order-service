@@ -7,6 +7,7 @@ use crate::models::order::CreateOrderRequest;
 use crate::models::shipping_address::ShippingAddress;
 use crate::repositories::idempotency_repository::MockIdempotencyRepository;
 use crate::repositories::order_repository::MockOrderRepository;
+use crate::services::auth_client::{AuthClient, MockAuthClient};
 use crate::services::inventory_client::MockInventoryClient;
 use crate::services::wallet_client::MockWalletClient;
 
@@ -77,12 +78,18 @@ async fn test_double_saga_execution_skipped_by_idempotency() {
     let mut wallet_client = MockWalletClient::new();
     wallet_client.expect_check_wallet().returning(|_, _| Ok(()));
 
+    let mut auth_client = MockAuthClient::new();
+    auth_client
+        .expect_send_order_event()
+        .returning(|_, _| Ok(()));
+
     let order_repo: Arc<dyn crate::repositories::order_repository::OrderRepository + Send + Sync> =
         Arc::new(order_repo);
     let inv_client: Arc<dyn crate::services::inventory_client::InventoryClient + Send + Sync> =
         Arc::new(inv_client);
     let wallet_client: Arc<dyn crate::services::wallet_client::WalletClient + Send + Sync> =
         Arc::new(wallet_client);
+    let auth_client: Arc<dyn AuthClient + Send + Sync> = Arc::new(auth_client);
     let idem_repo: Arc<
         dyn crate::repositories::idempotency_repository::IdempotencyRepository + Send + Sync,
     > = Arc::new(idem_repo);
@@ -106,6 +113,7 @@ async fn test_double_saga_execution_skipped_by_idempotency() {
                 notes: None,
             },
             note_to_jastiper: None,
+            idempotency_key: None,
         },
         product: serde_json::json!({}),
         idempotency_key: idem_key,
@@ -115,6 +123,7 @@ async fn test_double_saga_execution_skipped_by_idempotency() {
         &order_repo,
         &inv_client,
         &wallet_client,
+        &auth_client,
         &idem_repo,
         base_request(),
     )
@@ -125,6 +134,7 @@ async fn test_double_saga_execution_skipped_by_idempotency() {
         &order_repo,
         &inv_client,
         &wallet_client,
+        &auth_client,
         &idem_repo,
         base_request(),
     )
