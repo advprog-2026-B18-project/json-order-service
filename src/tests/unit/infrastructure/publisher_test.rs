@@ -38,6 +38,7 @@ fn checkout_request() -> CheckoutRequest {
                 notes: None,
             },
             note_to_jastiper: None,
+            idempotency_key: None,
         },
         product: json!({"name": "Snack"}),
         idempotency_key: order_id,

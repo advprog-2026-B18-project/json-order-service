@@ -21,6 +21,7 @@ pub trait OrderRepository: Send + Sync {
 
     async fn create(
         &self,
+        order_id: Uuid,
         titipers_id: Uuid,
         jastiper_id: Uuid,
         req: CreateOrderRequest,

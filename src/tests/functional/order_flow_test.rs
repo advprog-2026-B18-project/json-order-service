@@ -77,7 +77,7 @@ async fn test_checkout_product_not_found() {
 
     let mut repo = MockOrderRepository::new();
     repo.expect_create()
-        .returning(move |_, _, _, _, _| Ok(order.clone()));
+        .returning(move |_, _, _, _, _, _| Ok(order.clone()));
     repo.expect_find_by_id().returning(|_| Ok(None));
 
     let mut inv = MockInventoryClient::new();
@@ -138,7 +138,7 @@ async fn test_checkout_publisher_failure_returns_500() {
 
     let mut repo = MockOrderRepository::new();
     repo.expect_create()
-        .returning(move |_, _, _, _, _| Ok(order.clone()));
+        .returning(move |_, _, _, _, _, _| Ok(order.clone()));
     repo.expect_find_by_id().returning(|_| Ok(None));
 
     let mut inv = MockInventoryClient::new();

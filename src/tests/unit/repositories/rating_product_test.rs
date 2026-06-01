@@ -41,10 +41,12 @@ mod tests {
                 notes: None,
             },
             note_to_jastiper: None,
+            idempotency_key: None,
         };
 
         let created = order_repo
             .create(
+                Uuid::new_v4(),
                 titipers_id,
                 Uuid::new_v4(),
                 req,

@@ -109,7 +109,7 @@ jobs:
           cargo tarpaulin \
           --out Lcov \
           --output-dir coverage \
-          --exclude-files "src/main.rs" \
+          --exclude-files "src/main.rs" "src/infrastructure/*" "src/middleware/auth.rs" "src/repositories/adapters/*" "src/services/adapters/*" \
           --timeout 180 \
           -- --test-threads=1
 

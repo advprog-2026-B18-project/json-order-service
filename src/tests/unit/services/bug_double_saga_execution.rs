@@ -113,6 +113,7 @@ async fn test_double_saga_execution_skipped_by_idempotency() {
                 notes: None,
             },
             note_to_jastiper: None,
+            idempotency_key: None,
         },
         product: serde_json::json!({}),
         idempotency_key: idem_key,

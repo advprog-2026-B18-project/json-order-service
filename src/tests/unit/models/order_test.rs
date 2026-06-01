@@ -25,6 +25,7 @@ mod tests {
             quantity: 1,
             shipping_address: valid_address(),
             note_to_jastiper: None,
+            idempotency_key: None,
         }
     }
 
